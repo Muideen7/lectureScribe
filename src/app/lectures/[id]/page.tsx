@@ -15,9 +15,9 @@ import GenerateNotes from "@/components/GenerateNotes";
  */
 export const dynamic = "force-dynamic";
 
-// The generated `PageProps` helper gives strict key checking on the `[id]`
-// segment; the local alias must not shadow that name.
-type LecturePageProps = PageProps<"/lectures/[id]">;
+type LecturePageProps = {
+  params: Promise<{ id: string }>;
+};
 
 const dateFormatter = new Intl.DateTimeFormat("en-NG", {
   dateStyle: "medium",
