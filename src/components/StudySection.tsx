@@ -10,6 +10,8 @@ interface LectureResult {
   title: string;
   transcript: string;
   notes: StructuredNotes;
+  language: string | null;
+  duration: number | null;
 }
 
 export default function StudySection() {
@@ -24,6 +26,8 @@ export default function StudySection() {
           title={result.title}
           transcript={result.transcript}
           notes={result.notes}
+          language={result.language}
+          duration={result.duration}
         />
       ) : (
         <p className="text-center text-sm text-zinc-400">

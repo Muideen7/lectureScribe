@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import {
   getEmbedding,
   saveLecture,
   type StructuredNotes,
 } from "@/lib/db";
+import { OWNER_COOKIE, verifyOwnerToken } from "@/lib/identity";
 import {
   checkRateLimit,
   getClientIp,
@@ -15,6 +17,9 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Structuring a long transcript plus the embedding round-trip can outrun the
+// platform default timeout.
+export const maxDuration = 120;
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemma-3-27b-it";
@@ -33,6 +38,8 @@ const BodySchema = z.object({
     .min(1, "transcript is required")
     .max(60000, "transcript is too long (max 60000 characters)."),
   course: z.string().trim().max(100).optional(),
+  language: z.string().trim().max(16).nullish(),
+  duration: z.number().finite().nonnegative().max(60 * 60 * 6).nullish(),
 });
 
 const NotesSchema = z.object({
@@ -70,14 +77,20 @@ function stripCodeFences(text: string): string {
   return (match?.[1] ?? trimmed).trim();
 }
 
-function buildPrompt(title: string, transcript: string): string {
+function buildPrompt(
+  title: string,
+  transcript: string,
+  course?: string
+): string {
   const clipped =
     transcript.length > MAX_MODEL_CHARS
       ? `${transcript.slice(0, MAX_MODEL_CHARS)}\n\n[Transcript truncated for length.]`
       : transcript;
   return [
     `You are a study assistant for Nigerian university students.`,
-    `Turn the lecture transcript below (titled "${title}") into structured study notes.`,
+    `Turn the lecture transcript below (titled "${title}"${
+      course ? `, course "${course}"` : ""
+    }) into structured study notes.`,
     ``,
     `Return ONLY valid JSON — no markdown, no code fences, no commentary — with exactly this shape:`,
     `{`,
@@ -92,6 +105,11 @@ function buildPrompt(title: string, transcript: string): string {
     `- 4-10 flashcards with specific questions and short answers.`,
     `- Use the transcript content only; do not invent facts.`,
     `- Keep language clear and simple.`,
+    `- Keep Nigerian and West African terms exactly as spoken (for example`,
+    `  "matriculation", "jollof", "harmattan", "Naira") rather than replacing`,
+    `  them with British or American equivalents.`,
+    `- The transcript may mix Nigerian Pidgin, English and Nigerian languages.`,
+    `  Preserve that wording; do not translate it into standard English.`,
     ``,
     `Transcript:`,
     clipped,
@@ -137,7 +155,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const { title, transcript, course } = parsed.data;
+    const { title, transcript, course, language, duration } = parsed.data;
 
     const model = process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
 
@@ -160,7 +178,7 @@ export async function POST(request: Request) {
               content:
                 "You output only valid JSON matching the requested schema. No markdown, no commentary.",
             },
-            { role: "user", content: buildPrompt(title, transcript) },
+            { role: "user", content: buildPrompt(title, transcript, course) },
           ],
         }),
       });
@@ -216,14 +234,27 @@ export async function POST(request: Request) {
     // Persist for search. Degrade gracefully if the DB is unavailable
     // so the user still gets their notes.
     try {
-      const { vector, model } = await getEmbedding(transcript);
+      // Ownership comes from the signed cookie only — never from the body.
+      const cookieStore = await cookies();
+      const ownerId = verifyOwnerToken(cookieStore.get(OWNER_COOKIE)?.value);
+      if (!ownerId) {
+        throw new Error(
+          "Your session could not be verified. Reload the page and try again."
+        );
+      }
+
+      // Named distinctly from the OpenRouter `model` above to avoid shadowing.
+      const { vector, model: embeddingModel } = await getEmbedding(transcript);
       const stored = await saveLecture({
+        ownerId,
         title,
         course,
+        language: language ?? null,
+        duration: duration ?? null,
         rawTranscript: transcript,
         notes,
         embedding: vector,
-        embeddingModel: model,
+        embeddingModel,
       });
       return NextResponse.json({
         notes,

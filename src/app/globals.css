@@ -1,73 +1,137 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: light;
+    --app-background: #fafaf9;
+    --app-surface: #ffffff;
+    --app-foreground: #18181b;
+    --card-face-bg: #ffffff;
+    --card-face-fg: #18181b;
+    --card-back-bg: #18181b;
+    --card-back-fg: #fafafa;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --app-background: #0a0a0a;
+      --app-surface: #18181b;
+      --app-foreground: #ededed;
+      --card-face-bg: #18181b;
+      --card-face-fg: #ededed;
+      --card-back-bg: #fafafa;
+      --card-back-fg: #18181b;
+    }
+  }
+
+  html {
+    /* Keep the layout clear of the iOS notch / dynamic island in standalone. */
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--app-background);
+    color: var(--app-foreground);
+    font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+    /* Stop rubber-band scrolling of the whole document behind fixed UI. */
+    overscroll-behavior-y: none;
+  }
+
+  /* iOS zooms the viewport when a focused field is under 16px. */
+  @media (max-width: 639px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+
+  /* Kill the 300ms double-tap delay without disabling pinch zoom. */
+  button,
+  a,
+  label,
+  select {
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--app-foreground);
+    outline-offset: 2px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+@layer components {
+  /* Respect the notch in standalone mode on both axes. */
+  .safe-area {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
 
-/* Flashcard flip animation (hover / keyboard focus) */
-.flashcard {
-  perspective: 1000px;
-}
+  .flashcard {
+    perspective: 1000px;
+    /* Long answers must not be clipped by a fixed height. */
+    min-height: 8rem;
+  }
 
-.flashcard-inner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  transform-style: preserve-3d;
-  transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
-}
+  /*
+   * Both faces live in the same grid cell, so the card sizes itself to the
+   * taller of the two and neither face is clipped. `display: grid` is what
+   * makes the overlay work at all — an inline box would ignore the cell.
+   */
+  .flashcard-inner {
+    display: grid;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
+  }
 
-.flashcard:hover .flashcard-inner,
-.flashcard:focus-visible .flashcard-inner,
-.flashcard:focus-within .flashcard-inner,
-.flashcard-inner[data-flipped="true"] {
-  transform: rotateY(180deg);
-}
+  .flashcard-front,
+  .flashcard-back {
+    grid-area: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--card-face-fg) 15%, transparent);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    text-align: center;
+    overflow-wrap: break-word;
+  }
 
-.flashcard-front,
-.flashcard-back {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  border-radius: 0.75rem;
-  border: 1px solid var(--color-zinc-200, #e4e4e7);
-  overflow: hidden;
-}
+  .flashcard-front {
+    background: var(--card-face-bg);
+    color: var(--card-face-fg);
+  }
 
-.flashcard-front {
-  background: #ffffff;
-  color: var(--foreground);
-}
+  .flashcard-back {
+    background: var(--card-back-bg);
+    color: var(--card-back-fg);
+    transform: rotateY(180deg);
+  }
 
-.flashcard-back {
-  background: #18181b;
-  color: #fafafa;
-  transform: rotateY(180deg);
+  /*
+   * Tap/click is the primary interaction. Hover-flip is layered on only for
+   * devices with a real pointer, otherwise a tapped card stays flipped on
+   * touch devices where :hover sticks after the tap.
+   */
+  .flashcard-inner[data-flipped="true"] {
+    transform: rotateY(180deg);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .flashcard:hover .flashcard-inner {
+      transform: rotateY(180deg);
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

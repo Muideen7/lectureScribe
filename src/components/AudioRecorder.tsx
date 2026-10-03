@@ -3,23 +3,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Mic, Sparkles, Square, TriangleAlert } from "lucide-react";
 import type { StructuredNotes } from "@/lib/db";
+import {
+  formatElapsed,
+  getUploadSizeBytes,
+  LANGUAGE_OPTIONS,
+  MAX_RECORDING_SECONDS,
+  MAX_UPLOAD_BYTES,
+  WHISPER_SAMPLE_RATE,
+  type SpeechLanguage,
+} from "@/lib/transcribe";
 
 interface AudioRecorderResult {
   title: string;
   transcript: string;
   notes: StructuredNotes;
   persisted: boolean;
+  language: string | null;
+  duration: number | null;
 }
 
 interface AudioRecorderProps {
   onResult?: (data: AudioRecorderResult) => void;
 }
 
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
-// Groq free-tier friendly: 5-min takes keep each transcription small and
-// a single device far below the org-wide 28,800 audio-sec/day quota.
-const MAX_RECORDING_SECONDS = 5 * 60;
+const MAX_UPLOAD_MB = Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024);
 
+/** Opus in WebM is ~10x smaller than PCM; prefer it where the browser has it. */
 function pickMimeType(): string | undefined {
   if (
     typeof MediaRecorder === "undefined" ||
@@ -31,6 +40,7 @@ function pickMimeType(): string | undefined {
     "audio/webm;codecs=opus",
     "audio/webm",
     "audio/mp4",
+    "audio/ogg;codecs=opus",
     "",
   ];
   for (const mime of candidates) {
@@ -44,81 +54,92 @@ function pickMimeType(): string | undefined {
   return undefined;
 }
 
-function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
-  const numChannels = Math.min(buffer.numberOfChannels, 2);
-  const sampleRate = buffer.sampleRate;
-  const length = buffer.length;
-  const bytesPerSample = 2;
-  const blockAlign = numChannels * bytesPerSample;
-  const dataSize = length * blockAlign;
-  const arrayBuffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(arrayBuffer);
-
-  const writeString = (offset: number, text: string) => {
-    for (let i = 0; i < text.length; i++) {
-      view.setUint8(offset + i, text.charCodeAt(i));
-    }
-  };
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true); // PCM chunk size
-  view.setUint16(20, 1, true); // PCM format
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * blockAlign, true); // byte rate
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true); // bits per sample
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  const channelData: Float32Array[] = [];
-  for (let c = 0; c < numChannels; c++) {
-    channelData.push(buffer.getChannelData(c));
+function writeAscii(view: DataView, offset: number, text: string): void {
+  for (let i = 0; i < text.length; i++) {
+    view.setUint8(offset + i, text.charCodeAt(i));
   }
-
-  let offset = 44;
-  for (let i = 0; i < length; i++) {
-    for (let c = 0; c < numChannels; c++) {
-      const sample = Math.max(-1, Math.min(1, channelData[c][i]));
-      view.setInt16(
-        offset,
-        sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-        true
-      );
-      offset += 2;
-    }
-  }
-
-  return new Blob([arrayBuffer], { type: "audio/wav" });
 }
 
-async function blobToWavBlob(blob: Blob): Promise<Blob> {
-  // Already WAV — pass through
-  if (blob.type.toLowerCase().includes("wav")) return blob;
+/** Wrap mono float samples in a canonical 16-bit PCM WAV container. */
+function encodeMonoWav(
+  samples: Float32Array,
+  sampleRate: number
+): { blob: Blob; byteLength: number } {
+  const dataSize = samples.length * 2;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeAscii(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+
+  return {
+    blob: new Blob([buffer], { type: "audio/wav" }),
+    byteLength: buffer.byteLength,
+  };
+}
+
+/**
+ * Resample to mono 16kHz — the rate Whisper decodes natively.
+ *
+ * This is a correctness fix, not an optimisation. The browser hands us 48kHz
+ * stereo, which as 16-bit PCM is ~187KB/s: a 5-minute take would be ~55MB and
+ * blow past the 25MB upload cap at roughly 2:13. At 16kHz mono the same take
+ * is ~9MB, and because Whisper resamples to 16kHz internally anyway, no
+ * accuracy is lost. It also cuts mobile upload data by ~85%, which matters for
+ * the students this is built for.
+ */
+async function blobToWhisperWav(blob: Blob): Promise<Blob> {
   const arrayBuffer = await blob.arrayBuffer();
   const AudioContextClass =
     window.AudioContext ??
     (window as unknown as { webkitAudioContext?: typeof AudioContext })
       .webkitAudioContext;
-  if (!AudioContextClass) {
+  const OfflineContextClass =
+    window.OfflineAudioContext ??
+    (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext })
+      .webkitOfflineAudioContext;
+
+  if (!AudioContextClass || !OfflineContextClass) {
     throw new Error("Audio conversion is not supported in this browser.");
   }
-  const ctx = new AudioContextClass();
-  try {
-    const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
-    return audioBufferToWavBlob(audioBuffer);
-  } finally {
-    void ctx.close().catch(() => undefined);
-  }
-}
 
-function formatElapsed(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  // Decode at the source rate, then let OfflineAudioContext do the resample
+  // and stereo->mono downmix in one pass.
+  const decodeCtx = new AudioContextClass();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await decodeCtx.decodeAudioData(arrayBuffer.slice(0));
+  } finally {
+    void decodeCtx.close().catch(() => undefined);
+  }
+
+  const frames = Math.max(1, Math.ceil(decoded.duration * WHISPER_SAMPLE_RATE));
+  const offline = new OfflineContextClass(1, frames, WHISPER_SAMPLE_RATE);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start();
+
+  const rendered = await offline.startRendering();
+  return encodeMonoWav(rendered.getChannelData(0), WHISPER_SAMPLE_RATE).blob;
 }
 
 function extractNotes(json: unknown): StructuredNotes | null {
@@ -145,19 +166,33 @@ function extractNotes(json: unknown): StructuredNotes | null {
 
 export default function AudioRecorder({ onResult }: AudioRecorderProps) {
   const [title, setTitle] = useState("");
+  const [course, setCourse] = useState("");
+  const [terms, setTerms] = useState("");
+  const [language, setLanguage] = useState<SpeechLanguage>("en");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isStructuring, setIsStructuring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [transcript, setTranscript] = useState("");
-  const [notes, setNotes] = useState<StructuredNotes | null>(null);
+  const [detected, setDetected] = useState<{
+    language: string | null;
+    duration: number | null;
+  } | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Keep the latest hint values readable from the stop handler without
+  // re-creating it (and re-binding MediaRecorder) on every keystroke.
+  const hintsRef = useRef({ title, course, terms, language });
+
+  useEffect(() => {
+    hintsRef.current = { title, course, terms, language };
+  }, [title, course, terms, language]);
 
   useEffect(() => {
     return () => {
@@ -175,6 +210,9 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
       }
       setIsTranscribing(true);
       setError(null);
+      setDetected(null);
+      const hints = hintsRef.current;
+
       try {
         const mimeType = recorder.mimeType || "audio/webm";
         const rawBlob = new Blob(chunksRef.current, { type: mimeType });
@@ -183,20 +221,22 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
         if (rawBlob.size === 0) {
           throw new Error("Recording was empty. Please try again.");
         }
-        if (rawBlob.size > MAX_FILE_BYTES) {
-          throw new Error("Recording exceeds the 25MB limit.");
-        }
 
-        const wavBlob = await blobToWavBlob(rawBlob);
-        if (wavBlob.size > MAX_FILE_BYTES) {
+        const wavBlob = await blobToWhisperWav(rawBlob);
+        if (wavBlob.size > MAX_UPLOAD_BYTES) {
           throw new Error(
-            "Converted WAV exceeds the 25MB limit. Try a shorter recording."
+            `Converted audio is ${(wavBlob.size / 1024 / 1024).toFixed(1)}MB, ` +
+              `over the ${MAX_UPLOAD_MB}MB limit. Try a shorter recording.`
           );
         }
 
-        const baseName = title.trim() || "lecture";
+        const baseName = (hints.title.trim() || "lecture").replace(/\s+/g, "-");
         const form = new FormData();
         form.append("audio", wavBlob, `${baseName}.wav`);
+        form.append("language", hints.language);
+        if (hints.title.trim()) form.append("title", hints.title.trim());
+        if (hints.course.trim()) form.append("course", hints.course.trim());
+        if (hints.terms.trim()) form.append("terms", hints.terms.trim());
 
         const res = await fetch("/api/transcribe", {
           method: "POST",
@@ -204,20 +244,25 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
         });
         const data = (await res.json()) as {
           transcript?: string;
+          language?: string | null;
+          duration?: number | null;
           error?: string;
         };
         if (!res.ok) {
           throw new Error(data.error ?? "Transcription failed.");
         }
-        if (!data.transcript) {
-          throw new Error("Transcription returned no text.");
+        if (!data.transcript?.trim()) {
+          throw new Error(
+            "Transcription returned no text. Try moving closer to the speaker."
+          );
         }
         setTranscript(data.transcript);
-        setNotes(null);
+        setDetected({
+          language: data.language ?? null,
+          duration: typeof data.duration === "number" ? data.duration : null,
+        });
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Transcription failed."
-        );
+        setError(err instanceof Error ? err.message : "Transcription failed.");
       } finally {
         setIsTranscribing(false);
         streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -225,14 +270,14 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
         recorderRef.current = null;
       }
     },
-    [title]
+    []
   );
 
   const startRecording = useCallback(async () => {
     setError(null);
     setSaveWarning(null);
     setTranscript("");
-    setNotes(null);
+    setDetected(null);
     setElapsed(0);
 
     if (
@@ -245,7 +290,14 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          // A lecture is one voice in a reverberant hall, not a video call:
+          // echo cancellation would treat the lecturer as echo and gate them.
+          echoCancellation: false,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
       });
       streamRef.current = stream;
 
@@ -275,9 +327,9 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
           const next = s + 1;
           if (next >= MAX_RECORDING_SECONDS) {
             // Auto-stop at the cap; onstop handles transcription.
-            const recorder = recorderRef.current;
-            if (recorder && recorder.state !== "inactive") {
-              recorder.stop();
+            const active = recorderRef.current;
+            if (active && active.state !== "inactive") {
+              active.stop();
             }
           }
           return next;
@@ -317,6 +369,11 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
         body: JSON.stringify({
           title: effectiveTitle,
           transcript: transcript.trim(),
+          course: course.trim() || undefined,
+          // Persist what was actually recorded, not what was requested, so
+          // search and later note regeneration know the lecture's language.
+          language: detected?.language ?? undefined,
+          duration: detected?.duration ?? undefined,
         }),
       });
       const data = (await res.json()) as unknown;
@@ -346,12 +403,13 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
             : "Notes generated but not saved to your library."
         );
       }
-      setNotes(parsed);
       onResult?.({
         title: effectiveTitle,
         transcript: transcript.trim(),
         notes: parsed,
         persisted,
+        language: detected?.language ?? null,
+        duration: detected?.duration ?? null,
       });
     } catch (err) {
       setError(
@@ -360,40 +418,116 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
     } finally {
       setIsStructuring(false);
     }
-  }, [transcript, title, onResult]);
+  }, [transcript, title, course, detected, onResult]);
 
   const busy = isTranscribing || isStructuring;
+  const selectedLanguage =
+    LANGUAGE_OPTIONS.find((option) => option.value === language) ??
+    LANGUAGE_OPTIONS[0];
+  const uploadEstimate = getUploadSizeBytes(elapsed);
 
   return (
     <section
       aria-label="Lecture recorder"
-      className="w-full rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-6"
+      className="w-full rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6"
     >
-      <div className="mb-4">
-        <label
-          htmlFor="lecture-title"
-          className="mb-1.5 block text-sm font-medium text-zinc-700"
-        >
-          Lecture title
-        </label>
-        <input
-          id="lecture-title"
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Intro to Photosynthesis"
-          disabled={isRecording || busy}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none disabled:opacity-60"
-        />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label
+            htmlFor="lecture-title"
+            className="mb-1.5 block text-sm font-medium text-zinc-700"
+          >
+            Lecture title
+          </label>
+          <input
+            id="lecture-title"
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Intro to Photosynthesis"
+            disabled={isRecording || busy}
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none disabled:opacity-60 sm:text-sm"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="lecture-course"
+            className="mb-1.5 block text-sm font-medium text-zinc-700"
+          >
+            Course <span className="font-normal text-zinc-400">(optional)</span>
+          </label>
+          <input
+            id="lecture-course"
+            type="text"
+            value={course}
+            onChange={(e) => setCourse(e.target.value)}
+            placeholder="e.g. BIO 201"
+            disabled={isRecording || busy}
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none disabled:opacity-60 sm:text-sm"
+          />
+        </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mt-4">
+        <label
+          htmlFor="lecture-language"
+          className="mb-1.5 block text-sm font-medium text-zinc-700"
+        >
+          Language spoken in the lecture
+        </label>
+        <select
+          id="lecture-language"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value as SpeechLanguage)}
+          disabled={isRecording || busy}
+          aria-describedby="lecture-language-hint"
+          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-base text-zinc-900 focus:border-zinc-900 focus:outline-none disabled:opacity-60 sm:text-sm"
+        >
+          {LANGUAGE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <p
+          id="lecture-language-hint"
+          className="mt-1.5 text-xs leading-5 text-zinc-500"
+        >
+          {selectedLanguage.hint}
+        </p>
+      </div>
+
+      <details className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium text-zinc-700">
+          Add course words to recognise
+        </summary>
+        <div className="mt-3">
+          <label htmlFor="lecture-terms" className="sr-only">
+            Course words and names
+          </label>
+          <input
+            id="lecture-terms"
+            type="text"
+            value={terms}
+            onChange={(e) => setTerms(e.target.value)}
+            placeholder="e.g. Professor Adeyemi, photosynthesis, JSTOR"
+            disabled={isRecording || busy}
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none disabled:opacity-60 sm:text-sm"
+          />
+          <p className="mt-1.5 text-xs leading-5 text-zinc-500">
+            Names and terms you add here are biased into the transcription, so
+            they are spelled correctly instead of guessed.
+          </p>
+        </div>
+      </details>
+
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
         {!isRecording ? (
           <button
             type="button"
             onClick={() => void startRecording()}
             disabled={busy}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Mic className="h-4 w-4" aria-hidden />
             Start Recording
@@ -402,7 +536,7 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
           <button
             type="button"
             onClick={stopRecording}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-red-500"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-red-500"
           >
             <Square className="h-4 w-4" aria-hidden />
             Stop Recording
@@ -418,9 +552,6 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
               />
               Recording… {formatElapsed(elapsed)} /{" "}
               {formatElapsed(MAX_RECORDING_SECONDS)}
-              {elapsed >= MAX_RECORDING_SECONDS - 30
-                ? " (stops automatically at 5:00)"
-                : null}
             </span>
           ) : isTranscribing ? (
             <span className="inline-flex items-center gap-2">
@@ -431,12 +562,16 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
         </div>
       </div>
       <p className="mt-2 text-xs text-zinc-400">
-        Max {formatElapsed(MAX_RECORDING_SECONDS)} per take — keeps
-        transcriptions fast and within the free-tier audio budget.
+        Up to {formatElapsed(MAX_RECORDING_SECONDS)} per take · uploaded as{" "}
+        {(uploadEstimate / 1024 / 1024).toFixed(1)}MB of {MAX_UPLOAD_MB}MB
+        {isRecording ? "" : " at full length"}
       </p>
 
       {error ? (
-        <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          role="alert"
+          className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
           {error}
         </p>
       ) : null}
@@ -453,17 +588,30 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
 
       {transcript ? (
         <div className="mt-5">
-          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-            Raw transcript
-          </h3>
-          <p className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-lg bg-zinc-50 px-3 py-2.5 text-sm leading-7 text-zinc-800">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+              Raw transcript
+            </h3>
+            {detected?.language ? (
+              <p className="text-xs text-zinc-400">
+                Decoded as{" "}
+                <span className="font-medium text-zinc-600">
+                  {detected.language}
+                </span>
+                {detected.duration
+                  ? ` · ${formatElapsed(Math.round(detected.duration))}`
+                  : ""}
+              </p>
+            ) : null}
+          </div>
+          <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-zinc-50 px-3 py-2.5 text-sm leading-7 text-zinc-800">
             {transcript}
           </p>
           <button
             type="button"
             onClick={() => void structureNotes()}
             disabled={busy || !transcript.trim()}
-            className="mt-3 inline-flex items-center justify-center gap-2 rounded-full border border-zinc-900 px-5 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-900 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-zinc-900 px-5 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-900 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             {isStructuring ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -472,45 +620,6 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
             )}
             {isStructuring ? "Structuring…" : "Structure Notes"}
           </button>
-        </div>
-      ) : null}
-
-      {notes ? (
-        <div className="mt-5 border-t border-zinc-100 pt-4">
-          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-zinc-500">
-            Structured notes
-          </h3>
-          {notes.headings.length > 0 ? (
-            <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-zinc-800">
-              {notes.headings.map((h) => (
-                <li key={h}>{h}</li>
-              ))}
-            </ul>
-          ) : null}
-          {notes.definitions.length > 0 ? (
-            <dl className="mb-3 space-y-2">
-              {notes.definitions.map((d) => (
-                <div key={d.term} className="text-sm">
-                  <dt className="font-semibold text-zinc-900">{d.term}</dt>
-                  <dd className="text-zinc-700">{d.definition}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
-          {notes.flashcards.length > 0 ? (
-            <ul className="space-y-2">
-              {notes.flashcards.map((f, i) => (
-                <li
-                  key={`${f.question}-${i}`}
-                  className="rounded-lg bg-zinc-50 px-3 py-2 text-sm text-zinc-800"
-                >
-                  <span className="font-medium">Q: {f.question}</span>
-                  <br />
-                  <span className="text-zinc-600">A: {f.answer}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
         </div>
       ) : null}
     </section>

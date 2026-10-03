@@ -12,8 +12,18 @@ export interface StructuredNotes {
 
 export interface Lecture {
   _id?: string;
+  /**
+   * Owning visitor (see `src/lib/identity.ts`). Every read and write is scoped
+   * by this field. Documents saved before ownership existed have no `ownerId`
+   * and are treated as unowned — they are invisible rather than public.
+   */
+  ownerId: string;
   title: string;
   course?: string;
+  /** ISO-639-1 code Whisper reported, when known. */
+  language?: string | null;
+  /** Audio length in seconds, when known. */
+  duration?: number | null;
   rawTranscript: string;
   notes: StructuredNotes;
   embedding: number[]; // 384 dims (OpenRouter embed model or trigram fallback)
@@ -155,11 +165,13 @@ export type LectureWithScore = Lecture & { score: number };
 type LectureInput = Omit<Lecture, "_id" | "createdAt">;
 
 interface MongoLectureDoc
-  extends Omit<Lecture, "_id" | "createdAt" | "embeddingModel"> {
+  extends Omit<Lecture, "_id" | "createdAt" | "embeddingModel" | "ownerId"> {
   _id?: ObjectId;
   createdAt?: Date;
   /** Older docs may predate embeddingModel — treated as TRIGRAM_MODEL. */
   embeddingModel?: string;
+  /** Absent on documents saved before ownership existed. */
+  ownerId?: string;
 }
 
 declare global {
@@ -188,6 +200,11 @@ async function ensureIndexes(db: Db): Promise<void> {
     const collection = db.collection(COLLECTION);
     await collection.createIndex({ title: 1 }, { name: "title_1" });
     await collection.createIndex({ createdAt: -1 }, { name: "createdAt_-1" });
+    // Every query is owner-scoped, and search sorts within one owner.
+    await collection.createIndex(
+      { ownerId: 1, createdAt: -1 },
+      { name: "ownerId_1_createdAt_-1" }
+    );
     global._lecturescribeIndexesEnsured = true;
   } catch (err) {
     // Never block requests on index creation (e.g. restricted DB users).
@@ -212,8 +229,13 @@ export async function connectDb(): Promise<{ client: MongoClient; db: Db }> {
 function toLecture(doc: MongoLectureDoc): Lecture {
   return {
     _id: doc._id?.toHexString(),
+    // Unowned legacy documents surface as an empty owner, which no cookie can
+    // ever match — so they are unreachable rather than shared.
+    ownerId: doc.ownerId ?? "",
     title: doc.title,
     course: doc.course,
+    language: doc.language ?? null,
+    duration: typeof doc.duration === "number" ? doc.duration : null,
     rawTranscript: doc.rawTranscript,
     notes: doc.notes,
     embedding: doc.embedding,
@@ -225,6 +247,7 @@ function toLecture(doc: MongoLectureDoc): Lecture {
 /**
  * Saves a new lecture document and returns it. Always inserts (history is
  * preserved) — two lectures may share a title without overwriting each other.
+ * `ownerId` must come from the verified cookie, never from client input.
  */
 export async function saveLecture(lecture: LectureInput): Promise<Lecture> {
   const { db } = await connectDb();
@@ -242,7 +265,42 @@ export async function saveLecture(lecture: LectureInput): Promise<Lecture> {
 }
 
 /**
- * Brute-force cosine-similarity search over stored lectures.
+ * Fetch one lecture by id, scoped to its owner.
+ *
+ * Returns null both when the id does not exist and when it belongs to someone
+ * else, so a guessed id cannot be used to probe for other users' lectures.
+ */
+export async function getLectureById(
+  id: string,
+  ownerId: string
+): Promise<Lecture | null> {
+  if (!ObjectId.isValid(id)) return null;
+
+  const { db } = await connectDb();
+  const collection = db.collection<MongoLectureDoc>(COLLECTION);
+  const doc = await collection.findOne({ _id: new ObjectId(id), ownerId });
+  return doc ? toLecture(doc) : null;
+}
+
+/**
+ * A lecture is only usable if it carries all three note arrays; the detail page
+ * offers to generate notes when this is false.
+ */
+export function hasNotes(lecture: Pick<Lecture, "notes">): boolean {
+  const notes = lecture.notes;
+  if (!notes) return false;
+  return (
+    Array.isArray(notes.headings) &&
+    Array.isArray(notes.definitions) &&
+    Array.isArray(notes.flashcards) &&
+    (notes.headings.length > 0 ||
+      notes.definitions.length > 0 ||
+      notes.flashcards.length > 0)
+  );
+}
+
+/**
+ * Brute-force cosine-similarity search over the caller's own lectures.
  * Placeholder until a MongoDB Atlas vector index is configured.
  * Docs stored under a different embedding model are re-embedded from
  * their rawTranscript so scores stay comparable. Returns top `limit`
@@ -250,6 +308,7 @@ export async function saveLecture(lecture: LectureInput): Promise<Lecture> {
  */
 export async function searchLectures(
   queryEmbedding: number[],
+  ownerId: string,
   limit = 5,
   queryModel: string = TRIGRAM_MODEL
 ): Promise<LectureWithScore[]> {
@@ -257,7 +316,13 @@ export async function searchLectures(
   const { db } = await connectDb();
   const collection = db.collection<MongoLectureDoc>(COLLECTION);
 
-  const docs = await collection.find({}).toArray();
+  // Scoped to the caller: this is the only thing standing between students and
+  // each other's lecture libraries.
+  const docs = await collection
+    .find({ ownerId })
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .toArray();
 
   const scored = await Promise.all(
     docs.map(async (doc) => {

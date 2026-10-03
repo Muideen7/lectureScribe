@@ -1,4 +1,12 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import {
+  buildGroqPrompt,
+  getLanguageOption,
+  isAllowedAudioFile,
+  MAX_UPLOAD_BYTES,
+  type SpeechLanguage,
+} from "@/lib/transcribe";
 import {
   checkRateLimit,
   getClientIp,
@@ -9,36 +17,54 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Uploading a 5-minute take plus upstream transcription can outrun the
+// platform default. Render/Vercel read this from the build output.
+export const maxDuration = 120;
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
-const GROQ_MODEL = "whisper-large-v3-turbo";
-const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25MB
 
-const ALLOWED_MIME_TYPES = new Set([
-  "audio/wav",
-  "audio/x-wav",
-  "audio/wave",
-  "audio/vnd.wave",
-  "audio/mpeg",
-  "audio/mp3",
-  "audio/x-mpeg",
-  "audio/x-mp3",
-]);
+/**
+ * `whisper-large-v3` measures ~10.3% WER against turbo's ~12% on Groq's
+ * benchmark. Lecture notes are only useful if the transcript is right, so
+ * accuracy wins over the cheaper, faster turbo model. Override with
+ * GROQ_MODEL=whisper-large-v3-turbo to trade accuracy for cost and latency.
+ */
+const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "whisper-large-v3";
 
-const ALLOWED_EXTENSIONS = new Set(["wav", "mp3"]);
+const FieldSchema = z
+  .string()
+  .trim()
+  .max(600, "Field is too long (max 600 characters).")
+  .optional()
+  .default("");
 
-function getExtension(filename: string): string {
-  const parts = filename.toLowerCase().split(".");
-  return parts.length > 1 ? (parts.pop() ?? "") : "";
+const MetadataSchema = z.object({
+  language: z.string().trim().max(8).optional(),
+  title: FieldSchema,
+  course: FieldSchema,
+  terms: FieldSchema,
+});
+
+interface GroqTranscription {
+  text?: string;
+  language?: string;
+  duration?: number;
 }
 
-function isAllowedAudio(file: File): boolean {
-  if (file.type && ALLOWED_MIME_TYPES.has(file.type.toLowerCase())) {
-    return true;
+interface GroqErrorBody {
+  error?: { message?: string } | string;
+}
+
+function readErrorMessage(body: string, fallback: string): string {
+  if (!body) return fallback;
+  try {
+    const parsed = JSON.parse(body) as GroqErrorBody;
+    if (typeof parsed.error === "string") return parsed.error;
+    if (parsed.error?.message) return parsed.error.message;
+  } catch {
+    // Not JSON — fall through to the raw snippet.
   }
-  // Fall back to extension check — some browsers send empty/octet-stream types.
-  const ext = getExtension(file.name);
-  return ALLOWED_EXTENSIONS.has(ext);
+  return body.slice(0, 500);
 }
 
 export async function POST(request: Request) {
@@ -73,7 +99,6 @@ export async function POST(request: Request) {
     }
 
     const audio = formData.get("audio");
-
     if (!audio || !(audio instanceof File)) {
       return NextResponse.json(
         { error: 'Missing audio file field named "audio".' },
@@ -88,77 +113,115 @@ export async function POST(request: Request) {
       );
     }
 
-    if (audio.size > MAX_FILE_BYTES) {
+    if (audio.size > MAX_UPLOAD_BYTES) {
       return NextResponse.json(
-        { error: "Audio file must be up to 25MB." },
+        {
+          error: `Audio file must be ${Math.floor(
+            MAX_UPLOAD_BYTES / 1024 / 1024
+          )}MB or smaller.`,
+        },
+        { status: 413 }
+      );
+    }
+
+    if (!isAllowedAudioFile(audio.type, audio.name)) {
+      return NextResponse.json(
+        { error: "Unsupported audio format. Use WAV, MP3, M4A, WebM or OGG." },
         { status: 400 }
       );
     }
 
-    if (!isAllowedAudio(audio)) {
-      return NextResponse.json(
-        { error: "Only WAV or MP3 audio files are supported." },
-        { status: 400 }
-      );
-    }
+    // Client-supplied hints arrive on the multipart body, not JSON, so parse
+    // them defensively — a bad hint must never fail an otherwise valid upload.
+    const rawLanguage = formData.get("language");
+    const language = (
+      typeof rawLanguage === "string" ? rawLanguage : ""
+    ).trim() as SpeechLanguage;
 
-    // Forward to Groq as OpenAI-compatible multipart upload.
-    // Do NOT set Content-Type manually — fetch sets the boundary.
+    const metadata = MetadataSchema.safeParse({
+      language,
+      title: formData.get("title"),
+      course: formData.get("course"),
+      terms: formData.get("terms"),
+    });
+    const meta = metadata.success ? metadata.data : null;
+    const languageOption = getLanguageOption(
+      meta?.language ?? (language || undefined)
+    );
+
+    const model = GROQ_MODEL;
+
     const groqForm = new FormData();
-    groqForm.append("file", audio, audio.name || "audio.mp3");
-    groqForm.append("model", GROQ_MODEL);
-    groqForm.append("response_format", "json");
+    // Do NOT set Content-Type manually — fetch sets the multipart boundary.
+    groqForm.append("file", audio, audio.name || "audio.wav");
+    groqForm.append("model", model);    // Greedy decoding: no sampling drift between takes of the same lecture.
+    groqForm.append("temperature", "0");
+    // verbose_json reports the language Whisper settled on, so the UI can show
+    // the student what was actually decoded.
+    groqForm.append("response_format", "verbose_json");
+
+    if (languageOption.groq) {
+      groqForm.append("language", languageOption.groq);
+    }
+
+    const prompt = buildGroqPrompt({
+      language: languageOption.value,
+      title: meta?.title,
+      course: meta?.course,
+      terms: meta?.terms,
+    });
+    if (prompt) {
+      groqForm.append("prompt", prompt);
+    }
 
     let groqRes: Response;
     try {
       groqRes = await fetch(`${GROQ_BASE_URL}/audio/transcriptions`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: { Authorization: `Bearer ${apiKey}` },
         body: groqForm,
+        signal: AbortSignal.timeout(110_000),
       });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to reach Groq API.";
-      return NextResponse.json({ error: message }, { status: 500 });
+        err instanceof Error && err.name === "TimeoutError"
+          ? "Transcription timed out. Try a shorter recording."
+          : err instanceof Error
+            ? err.message
+            : "Failed to reach Groq API.";
+      return NextResponse.json({ error: message }, { status: 504 });
     }
 
     if (!groqRes.ok) {
-      let message = `Groq transcription failed (${groqRes.status}).`;
-      try {
-        const text = await groqRes.text();
-        if (text) {
-          try {
-            const parsed = JSON.parse(text) as {
-              error?: { message?: string } | string;
-            };
-            if (typeof parsed.error === "string") {
-              message = parsed.error;
-            } else if (parsed.error?.message) {
-              message = parsed.error.message;
-            } else {
-              message = text.slice(0, 500);
-            }
-          } catch {
-            message = text.slice(0, 500);
-          }
-        }
-      } catch {
-        // Keep default message
-      }
-      return NextResponse.json({ error: message }, { status: 500 });
-    }
-
-    const data = (await groqRes.json()) as { text?: string };
-    if (!data.text) {
+      // Surface 429 as a 429 so the client can show the real retry window.
+      const status = groqRes.status === 429 ? 429 : 502;
+      const body = await groqRes.text().catch(() => "");
       return NextResponse.json(
-        { error: "Groq returned an empty transcript." },
-        { status: 500 }
+        {
+          error: readErrorMessage(
+            body,
+            `Groq transcription failed (${groqRes.status}).`
+          ),
+        },
+        { status }
       );
     }
 
-    return NextResponse.json({ transcript: data.text });
+    const data = (await groqRes.json()) as GroqTranscription;
+    const transcript = data.text?.trim();
+    if (!transcript) {
+      return NextResponse.json(
+        { error: "Groq returned an empty transcript." },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({
+      transcript,
+      language: data.language ?? languageOption.groq ?? null,
+      duration: typeof data.duration === "number" ? data.duration : null,
+      model,
+    });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Transcription failed.";

@@ -16,3 +16,9 @@ services:
         sync: false
       - key: OPENROUTER_API_KEY
         sync: false
+      # Signs the per-visitor owner cookie. Without it every request throws,
+      # because there would be no way to keep saved lectures private.
+      # Generate once with `openssl rand -hex 32` and never change it —
+      # changing it orphans every lecture saved under the old value.
+      - key: IDENTITY_SECRET
+        sync: false

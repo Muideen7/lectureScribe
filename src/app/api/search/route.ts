@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { getEmbedding, searchLectures } from "@/lib/db";
+import { OWNER_COOKIE, verifyOwnerToken } from "@/lib/identity";
 import {
   checkRateLimit,
   getClientIp,
@@ -49,8 +51,16 @@ export async function POST(request: Request) {
       );
     }
 
+    // Scoped to the caller's own lectures. Search must never surface another
+    // student's recording, so an unverifiable session returns nothing.
+    const cookieStore = await cookies();
+    const ownerId = verifyOwnerToken(cookieStore.get(OWNER_COOKIE)?.value);
+    if (!ownerId) {
+      return NextResponse.json({ results: [] });
+    }
+
     const { vector, model } = await getEmbedding(parsed.data.query);
-    const results = await searchLectures(vector, 5, model);
+    const results = await searchLectures(vector, ownerId, 5, model);
 
     // Strip bulky embedding vectors before sending to the browser.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
