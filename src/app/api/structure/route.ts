@@ -27,6 +27,14 @@ const DEFAULT_MODEL = "google/gemma-3-27b-it";
 // Cap what we send to the model to control cost/latency.
 const MAX_MODEL_CHARS = 20000;
 
+/**
+ * How long to wait on the model before giving up. Comfortably inside
+ * `maxDuration`, so a stalled upstream surfaces as a prompt 500 the client can
+ * retry rather than as a platform-level timeout that leaves the browser
+ * spinning with no explanation.
+ */
+const STRUCTURE_TIMEOUT_MS = 90_000;
+
 const BodySchema = z.object({
   title: z
     .string({ error: "title is required" })
@@ -196,10 +204,20 @@ export async function POST(request: Request) {
             { role: "user", content: buildPrompt(title, transcript, course) },
           ],
         }),
+        // Without this a stalled upstream holds the request until the platform
+        // timeout, and the student sees a generic failure with no way to tell
+        // the model was the problem.
+        signal: AbortSignal.timeout(STRUCTURE_TIMEOUT_MS),
       });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to reach OpenRouter.";
+      // A timeout rejects with `TimeoutError` rather than an `AbortError`, and
+      // its own message ("The operation timed out") is unhelpful on its own.
+      const timedOut = err instanceof Error && err.name === "TimeoutError";
+      const message = timedOut
+        ? "Note structuring timed out. The lecture may be long — try again, or trim the recording."
+        : err instanceof Error
+          ? err.message
+          : "Failed to reach OpenRouter.";
       return NextResponse.json({ error: message }, { status: 500 });
     }
 

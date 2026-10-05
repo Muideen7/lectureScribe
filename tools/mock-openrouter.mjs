@@ -30,30 +30,45 @@ const calls = {
   /** Every text that was sent for embedding, so a test can tell a query
    *  embedding apart from a whole-library re-embed. */
   embeddingInputs: [],
+  /** Remaining calls that should hang instead of responding. */
+  stall: 0,
 };
 
 const server = createServer((req, res) => {
   let body = "";
+  // The control endpoints take a query string (`/__stall?on=1`), so match on
+  // the pathname and read flags separately. Comparing the raw URL meant the
+  // stall switch silently fell through to the chat branch.
+  const [pathname = "", query = ""] = (req.url ?? "").split("?");
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     res.setHeader("Content-Type", "application/json");
 
     // Introspection for the verification harness.
-    if (req.url === "/__stats") {
+    if (pathname === "/__stats") {
       res.end(JSON.stringify(calls));
       return;
     }
-    if (req.url === "/__reset") {
+    if (pathname === "/__reset") {
       calls.embeddings = 0;
       calls.chat = 0;
       calls.peakConcurrentEmbeddings = 0;
       calls._inFlight = 0;
       calls.embeddingInputs = [];
+      calls.stall = 0;
       res.end("{}");
       return;
     }
 
-    if (req.url?.includes("/embeddings")) {
+    if (pathname === "/__stall") {
+      // Make the next N upstream calls hang, so a route's timeout can be
+      // observed end to end. `?on=1` hangs until `/__stall?on=0`.
+      calls.stall = query.includes("on=0") ? 0 : (calls.stall || 0) + 1;
+      res.end(JSON.stringify({ stall: calls.stall }));
+      return;
+    }
+
+    if (pathname.includes("/embeddings")) {
       calls.embeddings++;
       try {
         const parsed = JSON.parse(body || "{}");
@@ -77,6 +92,14 @@ const server = createServer((req, res) => {
     }
 
     calls.chat++;
+    if (calls.stall > 0) {
+      calls.stall--;
+      // Deliberately never respond. The caller must abandon this via its own
+      // AbortSignal; if it does not, the request hangs until the platform
+      // timeout and the verification script's own deadline expires.
+      return;
+    }
+
     const content = process.env.MOCK_OPENROUTER_INVALID_JSON
       ? "{ not json"
       : JSON.stringify(NOTES);

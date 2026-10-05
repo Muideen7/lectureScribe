@@ -42,9 +42,11 @@ npx next start -p 3111
 fixed port (`MOCK_OPENROUTER_PORT`, default 39123) and the later processes reuse
 the first one. Call counters are exposed on that port at `/__stats` and
 `/__reset`, and every embedded text is recorded so a test can tell a query
-embedding apart from a whole-library re-embed.
+embedding apart from a whole-library re-embed. `POST /__stall?on=1` makes the
+next upstream call hang instead of answering, which is how a route's timeout can
+be observed.
 
-## The two `e2e-*.mjs` scripts
+## The `e2e-*.mjs` scripts
 
 Require the server above to be running.
 
@@ -54,6 +56,8 @@ MONGODB_URI="mongodb://127.0.0.1:37017" MONGODB_DB=verification \
 
 MONGODB_URI="mongodb://127.0.0.1:37017" MONGODB_DB=verification \
   node tools/e2e-search-fanout.mjs
+
+APP_URL=http://localhost:3000 node tools/e2e-upstream-timeout.mjs
 ```
 
 - **`e2e-notes-backfill.mjs`** — the "generate notes" flow end to end: that it
@@ -63,6 +67,16 @@ MONGODB_URI="mongodb://127.0.0.1:37017" MONGODB_DB=verification \
 - **`e2e-search-fanout.mjs`** — that a library stored under an older embedding
   model is re-embedded once with bounded concurrency, that the result is written
   back, and that later searches embed only their query.
+- **`e2e-upstream-timeout.mjs`** — that a stalled OpenRouter is abandoned on the
+  route's own clock and reported as a timeout, rather than hanging until the
+  platform timeout.
 
-Both exit non-zero on failure and seed their own fixtures, so they can be run
+All exit non-zero on failure and seed their own fixtures, so they can be run
 repeatedly.
+
+### The timeout script is slow by default
+
+It waits out the route's real `STRUCTURE_TIMEOUT_MS` (90s). To iterate, lower
+that constant temporarily and rebuild — `next start` serves the compiled bundle,
+so editing the source alone changes nothing. With the guard removed the route
+never responds and the script reports that instead of hanging forever.
