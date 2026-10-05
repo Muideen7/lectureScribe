@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
 
 interface GenerateNotesProps {
+  /** Mongo id of the lecture to annotate. Must be present for an in-place update. */
+  lectureId?: string;
   title: string;
   course?: string;
   transcript: string;
@@ -15,12 +17,17 @@ interface GenerateNotesProps {
 /**
  * Builds notes for a lecture that was saved without them.
  *
- * Calls the same `POST /api/structure` the recorder uses, which saves a *new*
- * lecture document rather than updating this one — the transcript stays the
- * source of truth and history is preserved. On success the page reloads so the
- * server component picks up the fresh notes.
+ * Calls the same `POST /api/structure` the recorder uses, passing this
+ * lecture's id so the notes are attached to *this* document. Without the id the
+ * route would insert a second lecture and the page below would still show no
+ * notes, so every click would spend a request and leave a duplicate behind.
+ *
+ * The transcript stays the source of truth: the update only replaces the notes
+ * (and refreshes the embedding so search covers them immediately). On success
+ * the page refreshes so the server component picks up the fresh notes.
  */
 export default function GenerateNotes({
+  lectureId,
   title,
   course,
   transcript,
@@ -39,6 +46,7 @@ export default function GenerateNotes({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: lectureId,
           title,
           transcript,
           course: course || undefined,
@@ -46,9 +54,21 @@ export default function GenerateNotes({
           duration: duration ?? undefined,
         }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as {
+        error?: string;
+        id?: string;
+        persisted?: boolean;
+        warning?: string;
+      };
       if (!res.ok) {
         throw new Error(data.error ?? "Failed to generate notes.");
+      }
+      // The notes were produced but not written back — say so instead of
+      // refreshing into a page that looks unchanged.
+      if (data.persisted === false) {
+        throw new Error(
+          data.warning ?? "Notes generated but not saved to your library."
+        );
       }
       router.refresh();
     } catch (err) {

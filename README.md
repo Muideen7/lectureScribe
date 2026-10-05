@@ -40,6 +40,7 @@ Required vars (see `.env.local.example`):
 
 | Variable            | Used for                                  |
 | ------------------- | ----------------------------------------- |
+| `IDENTITY_SECRET`   | **Required in production.** HMAC key that signs the owner cookie scoping every saved lecture. Generate with `openssl rand -hex 32` and keep it stable — changing it orphans every saved lecture. Without it, production fails closed with a 500 on every request. |
 | `MONGODB_URI`       | MongoDB Atlas connection string           |
 | `GROQ_API_KEY`      | Groq Whisper transcription (`/api/transcribe`) |
 | `OPENROUTER_API_KEY`| Gemma 3 note structuring + text embeddings |
@@ -104,11 +105,22 @@ Steps:
 1. Push this repo to GitHub.
 2. In [Render](https://dashboard.render.com), go to **New → Blueprint** and connect the repo.
 3. Render detects `render.yaml`. Fill in the secret env vars when prompted:
-   `MONGODB_URI`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`.
+   `MONGODB_URI`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `IDENTITY_SECRET`.
 4. Click **Apply** and wait for the build (`npm install && npm run build`) then launch (`npm start`).
 5. Open the service URL. Free-plan services sleep when idle — the first request after inactivity can take ~1 minute.
 
 ## How to get API keys
+
+`IDENTITY_SECRET` is not an account — generate it locally:
+
+```bash
+printf 'IDENTITY_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env.local
+```
+
+Keep it stable across deploys. Rotating it invalidates every owner cookie, so
+each student's saved lectures become unreachable without any error being shown.
+It is deliberately **not** shared with your hosted environment's value; set
+whichever secret you like in Render or Vercel, and keep that one stable.
 
 - **Groq** — sign up at [groq.com](https://groq.com) (console at `console.groq.com`), create an API key under API Keys, and set it as `GROQ_API_KEY`. Used for Whisper transcription.
 - **OpenRouter** — sign up at [openrouter.ai](https://openrouter.ai), generate a key on the Keys page, fund a small balance if required by the model, and set it as `OPENROUTER_API_KEY`. Used for Gemma 3 note structuring.
@@ -116,6 +128,13 @@ Steps:
 
 ## Troubleshooting
 
+- **Every request returns 500 with "IDENTITY_SECRET is not configured"** — the
+  app fails closed on purpose rather than fall back to a guessable default that
+  would leak lectures between students. Generate a value and set it in the
+  environment (see above).
+- **Saved lectures vanished after a deploy** — `IDENTITY_SECRET` changed, so
+  existing owner cookies no longer verify and those lectures are unreachable.
+  There is no recovery; restore the previous value.
 - **`/api/structure` returns "Key limit exceeded (total limit)"** — your
   OpenRouter key has a spend limit that is already reached. Remove or
   raise it at openrouter.ai → Keys (the error message links directly).

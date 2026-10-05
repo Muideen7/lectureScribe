@@ -35,14 +35,40 @@ describe("rateLimitDisabled", () => {
 });
 
 describe("getClientIp", () => {
-  it("prefers the first x-forwarded-for entry", () => {
+  it("uses the last x-forwarded-for entry, not the client-supplied first", () => {
     const req = new Request("http://localhost/", {
       headers: {
         "x-forwarded-for": "203.0.113.5, 70.41.3.18",
         "x-real-ip": "198.51.100.9",
       },
     });
-    assert.equal(getClientIp(req), "203.0.113.5");
+    assert.equal(getClientIp(req), "70.41.3.18");
+  });
+
+  it("ignores a spoofed prefix so the rate-limit bucket cannot be rotated", () => {
+    // A proxy appends the address it observed, so everything before the last
+    // hop is caller-controlled. Rotating it must not mint a fresh bucket.
+    const spoofed = (fake: string) =>
+      new Request("http://localhost/", {
+        headers: { "x-forwarded-for": `${fake}, 70.41.3.18` },
+      });
+
+    assert.equal(getClientIp(spoofed("1.1.1.1")), "70.41.3.18");
+    assert.equal(getClientIp(spoofed("2.2.2.2")), "70.41.3.18");
+    assert.equal(getClientIp(spoofed("3.3.3.3")), "70.41.3.18");
+  });
+
+  it("handles a single hop and stray padding", () => {
+    const single = new Request("http://localhost/", {
+      headers: { "x-forwarded-for": "  70.41.3.18  " },
+    });
+    assert.equal(getClientIp(single), "70.41.3.18");
+
+    // Trailing commas/blank hops must not shadow the real one.
+    const padded = new Request("http://localhost/", {
+      headers: { "x-forwarded-for": "203.0.113.5, 70.41.3.18,  , " },
+    });
+    assert.equal(getClientIp(padded), "70.41.3.18");
   });
 
   it("falls back to x-real-ip, then unknown", () => {

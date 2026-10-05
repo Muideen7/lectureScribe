@@ -6,7 +6,7 @@ export default function Home() {
   return (
     <div className="flex min-h-dvh flex-col bg-stone-50 text-zinc-900">
       <header className="sticky top-0 z-10 border-b border-stone-200 bg-white/90 backdrop-blur">
-        <div className="safe-area mx-auto flex w-full max-w-4xl items-center gap-3 py-3 sm:py-4">
+        <div className="safe-area safe-area-top mx-auto flex w-full max-w-4xl items-center gap-3 py-3 sm:py-4">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white sm:h-10 sm:w-10">
             <GraduationCap className="h-5 w-5" aria-hidden />
           </span>
@@ -40,7 +40,7 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-stone-200 bg-white">
-        <p className="safe-area mx-auto w-full max-w-4xl py-4 text-center text-xs leading-5 text-zinc-400">
+        <p className="safe-area safe-area-bottom mx-auto w-full max-w-4xl py-4 text-center text-xs leading-5 text-zinc-400">
           LectureScribe — record, transcribe, and revise. Audio stays in your
           browser until you submit it for transcription. Saved lectures are
           private to this browser.

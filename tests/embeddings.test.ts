@@ -37,7 +37,7 @@ describe("getPlaceholderEmbedding", () => {
     const b = getPlaceholderEmbedding("photosynthesis converts light energy");
     const c = getPlaceholderEmbedding("quantum chromodynamics quark gluon");
     const dot = (x: number[], y: number[]) =>
-      x.reduce((s, v, i) => s + v * y[i], 0);
+      x.reduce((s, v, i) => s + v * (y[i] ?? 0), 0);
     assert.ok(dot(a, b) > dot(a, c));
   });
 });

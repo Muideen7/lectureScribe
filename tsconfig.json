@@ -5,6 +5,24 @@
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
+    /*
+     * Stricter than the `strict` baseline. Every flag here is on deliberately,
+     * not aspirationally — each is clean today, so a regression fails the build
+     * instead of accumulating.
+     */
+    // Indexing may yield undefined. Turns silent `arr[0].x` crashes into
+    // compile errors.
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    // Requires explicit `import type` for type-only imports, so the emitted
+    // JavaScript cannot accidentally depend on a type being erased.
+    "verbatimModuleSyntax": true,
+    // Keep syntax that Node can strip on its own: no enums, no parameter
+    // properties, no namespaces. Bundler output stays portable.
+    "erasableSyntaxOnly": true,
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",

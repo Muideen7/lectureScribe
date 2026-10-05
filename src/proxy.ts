@@ -31,11 +31,34 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Everything except static assets and image optimization. API routes must
-     * be included so a first-time API call (e.g. posting a recording) is
-     * already scoped — the route reads the cookie, and a missing one would
-     * otherwise mean an unowned lecture.
+     * Everything except static assets, image optimization, and the upload route.
+     *
+     * The API routes must be included so a first-time API call is already
+     * scoped: `/api/structure` and `/api/search` read the cookie, and a missing
+     * one would mean an unowned lecture. Both re-verify it themselves rather
+     * than trusting this matcher, which is what Next 16's proxy docs advise.
+     *
+     * `/api/transcribe` is excluded deliberately, and not for performance:
+     *
+     *   - When a proxy is active, Next clones the request body for every
+     *     non-GET request it handles, so the body can be read in both the proxy
+     *     and the route handler.
+     *   - That clone is capped at 10MB by default
+     *     (`experimental.proxyClientMaxBodySize`). Past the cap Next ends the
+     *     clone early and logs a warning — it does NOT reject the request, so
+     *     the route silently receives a truncated body.
+     *   - This route accepts up to `MAX_UPLOAD_BYTES` (25MB), so uploads past
+     *     10MB were being cut mid-multipart and forwarded to Groq, returning a
+     *     partial or garbled transcript with no error to the student. Keeping
+     *     the route out of the matcher means the clone never happens, which
+     *     also avoids buffering ~25MB per concurrent upload.
+     *
+     * Excluding it is safe because `/api/transcribe` never reads the owner
+     * cookie — it only writes Groq's transcript back and is rate-limited by IP.
+     * The follow-up `/api/structure` call, which does persist, is still proxied
+     * and mints the cookie there. If this route ever gains owner scoping, it
+     * must be added back to the matcher. `tests/proxy.test.ts` enforces that.
      */
-    "/((?!_next/static|_next/image|favicon.ico|icons/|sw.js|manifest.webmanifest).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icons/|sw.js|manifest.webmanifest|api/transcribe).*)",
   ],
 };

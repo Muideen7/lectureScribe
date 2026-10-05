@@ -30,9 +30,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — never commit real secrets, but do commit the templates so
+# contributors can see which variables exist without seeing any real value.
 .env*
-.env.local
+!.env.example
+!.env*.example
 atlas-credentials.env
 
 # vercel
@@ -41,8 +43,6 @@ atlas-credentials.env
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-atlas-credentials.env
-scripts/
-.env.local
-atlas-credentials.env
+
+# local scratch space
 scripts/

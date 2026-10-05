@@ -31,12 +31,32 @@ export function rateLimitDisabled(): boolean {
   return process.env.RATE_LIMIT_DISABLED === "1";
 }
 
-/** Best-effort client IP (Render/Heroku sit behind proxies). */
+/**
+ * Best-effort client IP (Render/Heroku sit behind proxies).
+ *
+ * `x-forwarded-for` is an append-only chain: each proxy adds the address it
+ * observed to the END. Only the last entry was written by infrastructure we
+ * control, so it is the only one worth reading — the leading entries are
+ * whatever the caller sent.
+ *
+ * Reading the *first* entry (the intuitive choice) hands the limiter to the
+ * caller: a rotating fake prefix yields a fresh bucket per request, which
+ * defeats the entire per-IP budget these caps exist to protect. The Groq quota
+ * behind `/api/transcribe` is org-wide, so that bypass costs real money.
+ *
+ * A deployment behind several proxies would need the trusted-hop count to pick
+ * the right entry. Rightmost is correct for the single-hop setup Render and
+ * Heroku provide, and still ignores client-supplied values there.
+ */
 export function getClientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
+    // Take the last non-empty hop: padding and stray commas must not win.
+    const hops = forwarded.split(",");
+    for (let i = hops.length - 1; i >= 0; i--) {
+      const hop = hops[i]?.trim();
+      if (hop) return hop;
+    }
   }
   const realIp = request.headers.get("x-real-ip")?.trim();
   if (realIp) return realIp;
@@ -71,6 +91,13 @@ export function checkRateLimit(
     const inWindow = stamps.filter((t) => now - t < w.windowMs);
     if (inWindow.length >= w.max) {
       const oldest = inWindow[0];
+      if (oldest === undefined) {
+        // Only reachable when a limit is configured as 0. Blocking is still the
+        // intent, but there is no request to measure a retry from, so charge
+        // the whole window instead of emitting `NaN` into a Retry-After header.
+        map.set(key, stamps);
+        return { limited: true, retryAfterSec: Math.ceil(w.windowMs / 1000) };
+      }
       const retryAfterSec = Math.max(
         1,
         Math.ceil((oldest + w.windowMs - now) / 1000)

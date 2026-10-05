@@ -100,7 +100,23 @@ export const LANGUAGE_OPTIONS: readonly LanguageOption[] = [
   },
 ];
 
-const DEFAULT_OPTION = LANGUAGE_OPTIONS[0];
+/**
+ * The fallback option, resolved once.
+ *
+ * Reading `LANGUAGE_OPTIONS[0]` is unsafe under `noUncheckedIndexedAccess`
+ * because an empty array would make it `undefined`, and every caller expects a
+ * real option. Failing at module load turns a latent `undefined.hint` crash
+ * into an immediate, obvious error if the list is ever emptied.
+ */
+function firstLanguageOption(): LanguageOption {
+  const first = LANGUAGE_OPTIONS[0];
+  if (first === undefined) {
+    throw new Error("LANGUAGE_OPTIONS must contain at least one entry.");
+  }
+  return first;
+}
+
+export const DEFAULT_LANGUAGE_OPTION: LanguageOption = firstLanguageOption();
 
 export function isSpeechLanguage(value: unknown): value is SpeechLanguage {
   return LANGUAGE_OPTIONS.some((option) => option.value === value);
@@ -108,7 +124,8 @@ export function isSpeechLanguage(value: unknown): value is SpeechLanguage {
 
 export function getLanguageOption(value: unknown): LanguageOption {
   return (
-    LANGUAGE_OPTIONS.find((option) => option.value === value) ?? DEFAULT_OPTION
+    LANGUAGE_OPTIONS.find((option) => option.value === value) ??
+    DEFAULT_LANGUAGE_OPTION
   );
 }
 

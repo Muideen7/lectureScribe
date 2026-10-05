@@ -68,10 +68,28 @@
 }
 
 @layer components {
-  /* Respect the notch in standalone mode on both axes. */
+  /*
+   * Clear the display cutouts on the horizontal axes. `env()` resolves to 0 on
+   * devices without a cutout, so this is a no-op everywhere else.
+   */
   .safe-area {
     padding-left: max(1rem, env(safe-area-inset-left));
     padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  /*
+   * Vertical equivalents, kept separate so the status bar and home indicator
+   * are only compensated for on the element that actually abuts them.
+   * Without these, an iPhone in standalone mode clips the sticky header under
+   * the notch and tucks the footer behind the home indicator — `viewportFit:
+   * "cover"` in the viewport export makes those insets non-zero.
+   */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .flashcard {

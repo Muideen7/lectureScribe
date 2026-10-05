@@ -5,6 +5,7 @@ import { Loader2, Mic, Sparkles, Square, TriangleAlert } from "lucide-react";
 import type { StructuredNotes } from "@/lib/db";
 import {
   formatElapsed,
+  DEFAULT_LANGUAGE_OPTION,
   getUploadSizeBytes,
   LANGUAGE_OPTIONS,
   MAX_RECORDING_SECONDS,
@@ -85,7 +86,9 @@ function encodeMonoWav(
 
   let offset = 44;
   for (let i = 0; i < samples.length; i++) {
-    const sample = Math.max(-1, Math.min(1, samples[i]));
+    // A missing sample is silence, not `undefined` coerced to NaN — which
+    // `Math.min` would happily produce and write into the WAV header as noise.
+    const sample = Math.max(-1, Math.min(1, samples[i] ?? 0));
     view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
     offset += 2;
   }
@@ -423,7 +426,7 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
   const busy = isTranscribing || isStructuring;
   const selectedLanguage =
     LANGUAGE_OPTIONS.find((option) => option.value === language) ??
-    LANGUAGE_OPTIONS[0];
+    DEFAULT_LANGUAGE_OPTION;
   const uploadEstimate = getUploadSizeBytes(elapsed);
 
   return (

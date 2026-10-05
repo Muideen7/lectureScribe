@@ -104,6 +104,7 @@ export default async function LecturePage({ params }: LecturePageProps) {
               from the transcript below — it costs one request.
             </p>
             <GenerateNotes
+              lectureId={lecture._id}
               title={lecture.title}
               course={lecture.course}
               transcript={lecture.rawTranscript}

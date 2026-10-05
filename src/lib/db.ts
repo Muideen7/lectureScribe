@@ -1,4 +1,4 @@
-import { Db, MongoClient, ObjectId } from "mongodb";
+import { Collection, Db, MongoClient, ObjectId } from "mongodb";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.MONGODB_DB ?? "lecturescribe";
@@ -34,6 +34,15 @@ export interface Lecture {
 
 export const EMBEDDING_DIMS = 384;
 
+/**
+ * How many of the caller's newest lectures one search scores.
+ *
+ * Brute-force scan, so this bounds the work per query rather than the library.
+ * A student with more lectures than this is matched against their most recent
+ * ones; see the search limitations note in the README.
+ */
+export const SEARCH_SCAN_LIMIT = 500;
+
 /** Deterministic offline embedding used when no embedding API is available. */
 export const TRIGRAM_MODEL = "trigram-v1";
 
@@ -45,6 +54,62 @@ export const TRIGRAM_MODEL = "trigram-v1";
 export const DEFAULT_EMBED_MODEL = "openai/text-embedding-3-small";
 
 const OPENROUTER_EMBED_URL = "https://openrouter.ai/api/v1/embeddings";
+
+/**
+ * Upper bound on an embedding round-trip. Embeddings are a small, fast call —
+ * if one has not answered by now it is not going to, and the search that
+ * triggered it should fall back to trigram rather than hang.
+ */
+const EMBEDDING_TIMEOUT_MS = 15_000;
+
+/**
+ * How many documents one search may re-embed at once.
+ *
+ * Search re-embeds any lecture stored under a different embedding model (see
+ * `searchLectures`). Unbounded, a mixed-model library turned a single search
+ * into hundreds of simultaneous upstream calls — repeated on every search, since
+ * nothing cached the result. The re-embedded vector is now written back, so this
+ * is a one-time cost per document; the bound keeps that one-time cost from
+ * arriving all at once.
+ */
+export const REEMBED_CONCURRENCY = 4;
+
+/**
+ * `Promise.all(items.map(fn))` with a cap on how many run at once, preserving
+ * input order. A worker per slot pulls the next item, so a slow item never
+ * blocks the others.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  if (items.length === 0) return results;
+
+  // Workers share an iterator rather than a cursor index. Reading `items[i]`
+  // after a bounds check still types as `T | undefined` under
+  // `noUncheckedIndexedAccess`, which the compiler cannot correlate with the
+  // check; `IteratorResult.done` carries that guarantee in the type itself.
+  // `next()` is synchronous, so claims stay strictly in input order.
+  const cursor = items[Symbol.iterator]();
+  let claimed = 0;
+
+  const slotCount = Math.max(1, Math.min(Math.floor(limit) || 1, items.length));
+  const workers = Array.from({ length: slotCount }, async () => {
+    for (;;) {
+      const step = cursor.next();
+      if (step.done === true) return;
+      const item = step.value;
+      // Claim the slot before awaiting, or a second worker would reuse it.
+      const index = claimed++;
+      results[index] = await fn(item, index);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
 
 /**
  * Placeholder 384-dim trigram-hash embedding (used until an
@@ -64,7 +129,9 @@ export function getPlaceholderEmbedding(text: string): number[] {
       hash = Math.imul(hash, 16777619);
     }
     const idx = Math.abs(hash) % EMBEDDING_DIMS;
-    vec[idx] += 1;
+    // The vector is pre-filled with zeroes, so the fallback never actually
+    // fires; it is here because reading an index may type as `undefined`.
+    vec[idx] = (vec[idx] ?? 0) + 1;
   };
 
   if (normalized.length < 3) {
@@ -78,7 +145,7 @@ export function getPlaceholderEmbedding(text: string): number[] {
   const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0));
   if (norm > 0) {
     for (let i = 0; i < vec.length; i++) {
-      vec[i] /= norm;
+      vec[i] = (vec[i] ?? 0) / norm;
     }
   }
   return vec;
@@ -109,6 +176,9 @@ async function fetchOpenRouterEmbedding(
         input: clipped,
         dimensions: EMBEDDING_DIMS,
       }),
+      // Without this a stalled upstream holds the request open until the
+      // platform timeout; the caller falls back to trigram instead.
+      signal: AbortSignal.timeout(EMBEDDING_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as OpenRouterEmbeddingResponse;
@@ -152,9 +222,13 @@ function cosineSimilarity(a: number[], b: number[]): number {
   let normA = 0;
   let normB = 0;
   for (let i = 0; i < len; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    // Read each vector once per position: indexed access is the only thing that
+    // can be absent, and one lookup keeps the fallback in a single place.
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    dot += x * y;
+    normA += x * x;
+    normB += y * y;
   }
   if (normA === 0 || normB === 0) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
@@ -300,11 +374,44 @@ export function hasNotes(lecture: Pick<Lecture, "notes">): boolean {
 }
 
 /**
+ * Persist a freshly computed vector so a document stops needing re-embedding.
+ *
+ * Owner-scoped in the filter as well as the caller check: a stale or forged id
+ * must not be able to rewrite someone else's stored embedding.
+ */
+async function writeBackEmbedding(
+  collection: Collection<MongoLectureDoc>,
+  doc: MongoLectureDoc,
+  fresh: EmbeddedText
+): Promise<void> {
+  if (!doc._id) return;
+  try {
+    await collection.updateOne(
+      { _id: doc._id, ownerId: doc.ownerId ?? "" },
+      { $set: { embedding: fresh.vector, embeddingModel: fresh.model } }
+    );
+  } catch (err) {
+    // The search can still be answered from `fresh`, so a failed cache write is
+    // only a performance loss — never fail the request over it.
+    console.warn(
+      "[db] embedding write-back failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+/**
  * Brute-force cosine-similarity search over the caller's own lectures.
  * Placeholder until a MongoDB Atlas vector index is configured.
- * Docs stored under a different embedding model are re-embedded from
- * their rawTranscript so scores stay comparable. Returns top `limit`
- * lectures ranked by score (descending).
+ *
+ * Docs stored under a different embedding model are re-embedded from their
+ * rawTranscript so scores stay comparable, and that vector is written back — so
+ * a mixed-model library costs one round-trip per document, once, not on every
+ * search. Re-embedding runs at most `REEMBED_CONCURRENCY` at a time.
+ *
+ * If the embedding API is unreachable the affected lecture scores 0 (it cannot
+ * be compared) rather than being scored against a vector from another model.
+ * Returns top `limit` lectures ranked by score (descending).
  */
 export async function searchLectures(
   queryEmbedding: number[],
@@ -321,31 +428,80 @@ export async function searchLectures(
   const docs = await collection
     .find({ ownerId })
     .sort({ createdAt: -1 })
-    .limit(500)
+    .limit(SEARCH_SCAN_LIMIT)
     .toArray();
 
-  const scored = await Promise.all(
-    docs.map(async (doc) => {
-      let embedding = Array.isArray(doc.embedding) ? doc.embedding : [];
+  const scored = await mapWithConcurrency(
+    docs,
+    REEMBED_CONCURRENCY,
+    async (doc): Promise<LectureWithScore> => {
+      const stored = Array.isArray(doc.embedding) ? doc.embedding : [];
       const docModel = doc.embeddingModel ?? TRIGRAM_MODEL;
-      if (docModel !== queryModel) {
-        try {
-          const fresh = await getEmbedding(doc.rawTranscript ?? "");
-          if (fresh.model === queryModel) {
-            embedding = fresh.vector;
-          } else {
-            return { ...toLecture(doc), score: 0 };
-          }
-        } catch {
-          return { ...toLecture(doc), score: 0 };
-        }
+
+      if (docModel === queryModel) {
+        return {
+          ...toLecture(doc),
+          score: cosineSimilarity(queryEmbedding, stored),
+        };
       }
+
+      // Stored under a different model (typically trigram from before an
+      // embedding API was configured) — recompute in the query's model.
+      const fresh = await getEmbedding(doc.rawTranscript ?? "");
+      if (fresh.model !== queryModel) {
+        // Upstream unavailable right now. Scoring against a vector from another
+        // model would fabricate a number, so treat it as unmatchable.
+        return { ...toLecture(doc), score: 0 };
+      }
+
+      await writeBackEmbedding(collection, doc, fresh);
       return {
         ...toLecture(doc),
-        score: cosineSimilarity(queryEmbedding, embedding),
+        embedding: fresh.vector,
+        embeddingModel: fresh.model,
+        score: cosineSimilarity(queryEmbedding, fresh.vector),
       };
-    })
+    }
   );
 
   return scored.sort((a, b) => b.score - a.score).slice(0, safeLimit);
+}
+
+/**
+ * Attach structured notes to a lecture the caller already owns.
+ *
+ * Used when notes are generated for a lecture that was saved without them. The
+ * owner-scoped filter means an id that belongs to someone else matches nothing
+ * and is reported as absent — it can neither be read nor overwritten, and a
+ * guessed id cannot be used to probe for other students' lectures.
+ *
+ * Returns the updated lecture, or null when the id is malformed, unknown, or
+ * not the caller's.
+ */
+export async function attachNotesToLecture(
+  id: string,
+  ownerId: string,
+  notes: StructuredNotes,
+  embedding?: EmbeddedText
+): Promise<Lecture | null> {
+  if (!ObjectId.isValid(id)) return null;
+
+  const { db } = await connectDb();
+  const collection = db.collection<MongoLectureDoc>(COLLECTION);
+
+  const set: Partial<MongoLectureDoc> = { notes };
+  // Re-embed alongside the notes so the lecture becomes searchable in the
+  // current model immediately, instead of waiting for a later search to fix it.
+  if (embedding) {
+    set.embedding = embedding.vector;
+    set.embeddingModel = embedding.model;
+  }
+
+  const updated = await collection.findOneAndUpdate(
+    { _id: new ObjectId(id), ownerId },
+    { $set: set },
+    { returnDocument: "after" }
+  );
+
+  return updated ? toLecture(updated) : null;
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import {
+  attachNotesToLecture,
   getEmbedding,
   saveLecture,
   type StructuredNotes,
@@ -40,6 +41,20 @@ const BodySchema = z.object({
   course: z.string().trim().max(100).optional(),
   language: z.string().trim().max(16).nullish(),
   duration: z.number().finite().nonnegative().max(60 * 60 * 6).nullish(),
+  /**
+   * Attach the notes to this lecture instead of saving a second copy.
+   *
+   * Set only by the "generate notes" flow on a lecture that was saved without
+   * them. Absent for the normal record-then-structure path, which appends so
+   * history is preserved. Ignored unless the id belongs to the caller — see the
+   * owner-scoped filter in `attachNotesToLecture`.
+   */
+  id: z
+    .string()
+    .trim()
+    .max(64)
+    .regex(/^[a-f\d]{24}$/i, "id must be a 24-character hex string.")
+    .optional(),
 });
 
 const NotesSchema = z.object({
@@ -155,7 +170,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const { title, transcript, course, language, duration } = parsed.data;
+    const { title, transcript, course, language, duration, id } = parsed.data;
 
     const model = process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
 
@@ -244,7 +259,27 @@ export async function POST(request: Request) {
       }
 
       // Named distinctly from the OpenRouter `model` above to avoid shadowing.
-      const { vector, model: embeddingModel } = await getEmbedding(transcript);
+      const embedding = await getEmbedding(transcript);
+
+      if (id) {
+        // Backfill path: update the lecture in place so the detail page the
+        // student is already on reflects the new notes. An id that is not the
+        // caller's matches nothing and returns null — never fall back to
+        // inserting, or a guessed id would silently create a lecture instead.
+        const updated = await attachNotesToLecture(id, ownerId, notes, embedding);
+        if (!updated) {
+          throw new Error(
+            "That lecture could not be found in your library. Reload the page and try again."
+          );
+        }
+        return NextResponse.json({
+          notes,
+          id: updated._id,
+          title: updated.title,
+          persisted: true,
+        });
+      }
+
       const stored = await saveLecture({
         ownerId,
         title,
@@ -253,8 +288,8 @@ export async function POST(request: Request) {
         duration: duration ?? null,
         rawTranscript: transcript,
         notes,
-        embedding: vector,
-        embeddingModel,
+        embedding: embedding.vector,
+        embeddingModel: embedding.model,
       });
       return NextResponse.json({
         notes,
