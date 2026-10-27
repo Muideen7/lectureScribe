@@ -7,6 +7,7 @@ import {
   saveLecture,
   type StructuredNotes,
 } from "@/lib/db";
+import { getUserFromSession } from "@/lib/auth";
 import { OWNER_COOKIE, verifyOwnerToken } from "@/lib/identity";
 import {
   checkRateLimit,
@@ -298,8 +299,20 @@ export async function POST(request: Request) {
         });
       }
 
+      const user = getUserFromSession(cookieStore);
+      if (!user) {
+        // Guest user: structured notes are returned for study, but keeping recordings
+        // permanently in the library requires signing in.
+        return NextResponse.json({
+          notes,
+          title,
+          persisted: false,
+          requiresAuth: true,
+        });
+      }
+
       const stored = await saveLecture({
-        ownerId,
+        ownerId: user.id || ownerId,
         title,
         course,
         language: language ?? null,

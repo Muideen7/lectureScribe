@@ -1,7 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Mic, Sparkles, Square, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import {
+  BookmarkCheck,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  Loader2,
+  Lock,
+  Mic,
+  Sparkles,
+  Square,
+  TriangleAlert,
+} from "lucide-react";
+import { useAuth } from "@/components/AuthContext";
 import type { StructuredNotes } from "@/lib/db";
 import {
   formatElapsed,
@@ -11,8 +24,8 @@ import {
   MAX_RECORDING_SECONDS,
   MAX_UPLOAD_BYTES,
   WHISPER_SAMPLE_RATE,
-  type SpeechLanguage,
 } from "@/lib/transcribe";
+import type { SpeechLanguage } from "@/lib/transcribe";
 
 interface AudioRecorderResult {
   title: string;
@@ -184,6 +197,14 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
   } | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
+  const { user, openAuthModal } = useAuth();
+  const [lastNotes, setLastNotes] = useState<StructuredNotes | null>(null);
+  const [requiresAuthToKeep, setRequiresAuthToKeep] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
+  const [copiedTranscript, setCopiedTranscript] = useState(false);
+
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -282,6 +303,9 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
     setTranscript("");
     setDetected(null);
     setElapsed(0);
+    setIsSaved(false);
+    setSavedId(null);
+    setRequiresAuthToKeep(false);
 
     if (
       typeof window === "undefined" ||
@@ -356,6 +380,47 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
     }
   }, []);
 
+  const saveLectureToAccount = useCallback(
+    async (notesToSave?: StructuredNotes) => {
+      const targetNotes = notesToSave ?? lastNotes;
+      if (!targetNotes || !transcript.trim()) return;
+
+      setSavingToLibrary(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/lectures/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim() || "Untitled Lecture",
+            course: course.trim() || undefined,
+            language: detected?.language ?? null,
+            duration: detected?.duration ?? null,
+            transcript: transcript.trim(),
+            notes: targetNotes,
+          }),
+        });
+        const data = (await res.json()) as { id?: string; error?: string };
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to save lecture.");
+        }
+        setIsSaved(true);
+        if (data.id) setSavedId(data.id);
+        setRequiresAuthToKeep(false);
+        setSaveWarning(null);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to save lecture to your account."
+        );
+      } finally {
+        setSavingToLibrary(false);
+      }
+    },
+    [lastNotes, transcript, title, course, detected]
+  );
+
   const structureNotes = useCallback(async () => {
     if (!transcript.trim()) {
       setError("Transcribe audio first before structuring notes.");
@@ -373,8 +438,6 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
           title: effectiveTitle,
           transcript: transcript.trim(),
           course: course.trim() || undefined,
-          // Persist what was actually recorded, not what was requested, so
-          // search and later note regeneration know the lecture's language.
           language: detected?.language ?? undefined,
           duration: detected?.duration ?? undefined,
         }),
@@ -391,21 +454,40 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
       if (!parsed) {
         throw new Error("Structuring returned invalid notes.");
       }
+      setLastNotes(parsed);
+
+      const requiresAuth =
+        data && typeof data === "object" && "requiresAuth" in data
+          ? Boolean((data as { requiresAuth: unknown }).requiresAuth)
+          : false;
+
       const persisted =
         data && typeof data === "object" && "persisted" in data
           ? (data as { persisted: unknown }).persisted !== false
           : true;
+
       const warning =
         data && typeof data === "object" && "warning" in data
           ? String((data as { warning: unknown }).warning)
           : null;
-      if (!persisted) {
+
+      if (requiresAuth) {
+        setRequiresAuthToKeep(true);
+        setIsSaved(false);
+      } else if (persisted) {
+        setIsSaved(true);
+        setRequiresAuthToKeep(false);
+        if (data && typeof data === "object" && "id" in data) {
+          setSavedId(String((data as { id: unknown }).id));
+        }
+      } else if (!persisted) {
         setSaveWarning(
           warning
             ? `Notes generated but not saved to your library: ${warning}`
             : "Notes generated but not saved to your library."
         );
       }
+
       onResult?.({
         title: effectiveTitle,
         transcript: transcript.trim(),
@@ -429,16 +511,69 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
     DEFAULT_LANGUAGE_OPTION;
   const uploadEstimate = getUploadSizeBytes(elapsed);
 
+  function copyTranscript() {
+    if (!transcript) return;
+    void navigator.clipboard.writeText(transcript);
+    setCopiedTranscript(true);
+    setTimeout(() => setCopiedTranscript(false), 2000);
+  }
+
   return (
     <section
       aria-label="Lecture recorder"
-      className="w-full rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6"
+      className="relative overflow-hidden rounded-3xl border border-stone-200/90 bg-white p-5 shadow-xl transition-all sm:p-7 dark:border-zinc-800 dark:bg-zinc-900/95"
     >
+      {/* Ambient background glow */}
+      <div
+        className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl"
+        aria-hidden="true"
+      />
+
+      {/* Header bar */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 pb-4 dark:border-zinc-800">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
+            <Mic className="h-4 w-4" aria-hidden />
+          </span>
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-stone-900 dark:text-white">
+              Recording Studio
+            </h2>
+            <p className="text-xs text-stone-500 dark:text-zinc-400">
+              Live microphone capture with dialect tuning
+            </p>
+          </div>
+        </div>
+
+        {/* User state indicator */}
+        <div className="flex items-center gap-2 text-xs">
+          {user ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+              Auto-saves to account
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() =>
+                openAuthModal(
+                  "Sign in with email and password to keep your recordings saved."
+                )
+              }
+              className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-stone-50 px-3 py-1 font-medium text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            >
+              <Lock className="h-3 w-3" aria-hidden />
+              Guest take · Log in to keep
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label
             htmlFor="lecture-title"
-            className="mb-1.5 block text-sm font-medium text-zinc-700"
+            className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-stone-600 dark:text-zinc-300"
           >
             Lecture title
           </label>
@@ -449,15 +584,15 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Intro to Photosynthesis"
             disabled={isRecording || busy}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none disabled:opacity-60 sm:text-sm"
+            className="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-base text-stone-900 placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 sm:text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:placeholder:text-zinc-500 dark:focus:border-emerald-500"
           />
         </div>
         <div>
           <label
             htmlFor="lecture-course"
-            className="mb-1.5 block text-sm font-medium text-zinc-700"
+            className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-stone-600 dark:text-zinc-300"
           >
-            Course <span className="font-normal text-zinc-400">(optional)</span>
+            Course <span className="font-normal text-stone-400">(optional)</span>
           </label>
           <input
             id="lecture-course"
@@ -466,7 +601,7 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
             onChange={(e) => setCourse(e.target.value)}
             placeholder="e.g. BIO 201"
             disabled={isRecording || busy}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none disabled:opacity-60 sm:text-sm"
+            className="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-base text-stone-900 placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 sm:text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:placeholder:text-zinc-500 dark:focus:border-emerald-500"
           />
         </div>
       </div>
@@ -474,9 +609,9 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
       <div className="mt-4">
         <label
           htmlFor="lecture-language"
-          className="mb-1.5 block text-sm font-medium text-zinc-700"
+          className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-stone-600 dark:text-zinc-300"
         >
-          Language spoken in the lecture
+          Spoken dialect or language
         </label>
         <select
           id="lecture-language"
@@ -484,7 +619,7 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
           onChange={(e) => setLanguage(e.target.value as SpeechLanguage)}
           disabled={isRecording || busy}
           aria-describedby="lecture-language-hint"
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-base text-zinc-900 focus:border-zinc-900 focus:outline-none disabled:opacity-60 sm:text-sm"
+          className="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-base text-stone-900 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 sm:text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:focus:border-emerald-500"
         >
           {LANGUAGE_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -494,15 +629,15 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
         </select>
         <p
           id="lecture-language-hint"
-          className="mt-1.5 text-xs leading-5 text-zinc-500"
+          className="mt-1.5 text-xs leading-5 text-stone-500 dark:text-zinc-400"
         >
           {selectedLanguage.hint}
         </p>
       </div>
 
-      <details className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
-        <summary className="cursor-pointer text-sm font-medium text-zinc-700">
-          Add course words to recognise
+      <details className="mt-4 rounded-xl border border-stone-200/80 bg-stone-50/70 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-800/40">
+        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-stone-700 dark:text-zinc-300">
+          Add specific names & course terminology
         </summary>
         <div className="mt-3">
           <label htmlFor="lecture-terms" className="sr-only">
@@ -513,116 +648,192 @@ export default function AudioRecorder({ onResult }: AudioRecorderProps) {
             type="text"
             value={terms}
             onChange={(e) => setTerms(e.target.value)}
-            placeholder="e.g. Professor Adeyemi, photosynthesis, JSTOR"
+            placeholder="e.g. Professor Adeyemi, photosynthesis, JSTOR, Unilag"
             disabled={isRecording || busy}
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none disabled:opacity-60 sm:text-sm"
+            className="w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-base text-stone-900 placeholder:text-stone-400 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:opacity-60 sm:text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:placeholder:text-zinc-500 dark:focus:border-emerald-500"
           />
-          <p className="mt-1.5 text-xs leading-5 text-zinc-500">
-            Names and terms you add here are biased into the transcription, so
-            they are spelled correctly instead of guessed.
+          <p className="mt-1.5 text-xs leading-5 text-stone-500 dark:text-zinc-400">
+            Names and terms you enter are biased into the Whisper transcription
+            engine for accurate spelling.
           </p>
         </div>
       </details>
 
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-        {!isRecording ? (
-          <button
-            type="button"
-            onClick={() => void startRecording()}
-            disabled={busy}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Mic className="h-4 w-4" aria-hidden />
-            Start Recording
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={stopRecording}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-red-500"
-          >
-            <Square className="h-4 w-4" aria-hidden />
-            Stop Recording
-          </button>
-        )}
+      {/* Recording Actions & Live Visualizer */}
+      <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          {!isRecording ? (
+            <button
+              type="button"
+              onClick={() => void startRecording()}
+              disabled={busy}
+              className="inline-flex min-h-12 items-center justify-center gap-2.5 rounded-full bg-stone-900 px-6 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:bg-stone-800 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+            >
+              <Mic className="h-4 w-4" aria-hidden />
+              Start Recording
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={stopRecording}
+              className="inline-flex min-h-12 items-center justify-center gap-2.5 rounded-full bg-red-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-600/30 transition-all hover:bg-red-500"
+            >
+              <Square className="h-4 w-4" aria-hidden />
+              Stop Recording
+            </button>
+          )}
 
-        <div aria-live="polite" className="text-sm text-zinc-600">
+          {/* Soundwave equalizer & timer feedback */}
           {isRecording ? (
-            <span className="inline-flex items-center gap-2">
-              <span
-                className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-red-600"
-                aria-hidden
-              />
-              Recording… {formatElapsed(elapsed)} /{" "}
-              {formatElapsed(MAX_RECORDING_SECONDS)}
-            </span>
+            <div className="flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-semibold text-red-700 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-300">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-600" />
+              <div className="flex h-5 items-center gap-0.5">
+                <span className="w-1 rounded-full bg-red-600 animate-soundwave-1" />
+                <span className="w-1 rounded-full bg-red-600 animate-soundwave-2" />
+                <span className="w-1 rounded-full bg-red-600 animate-soundwave-3" />
+                <span className="w-1 rounded-full bg-red-600 animate-soundwave-4" />
+                <span className="w-1 rounded-full bg-red-600 animate-soundwave-5" />
+              </div>
+              <span className="tabular-nums font-mono">
+                {formatElapsed(elapsed)} / {formatElapsed(MAX_RECORDING_SECONDS)}
+              </span>
+            </div>
           ) : isTranscribing ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              Transcribing audio…
-            </span>
+            <div className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3.5 py-2 text-xs font-medium text-stone-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              <Loader2 className="h-4 w-4 animate-spin text-emerald-600" aria-hidden />
+              Transcribing audio via Whisper AI…
+            </div>
           ) : null}
         </div>
+
+        <p className="text-xs text-stone-400 dark:text-zinc-500">
+          Up to {formatElapsed(MAX_RECORDING_SECONDS)} per take · ~{(uploadEstimate / 1024 / 1024).toFixed(1)}MB of {MAX_UPLOAD_MB}MB
+        </p>
       </div>
-      <p className="mt-2 text-xs text-zinc-400">
-        Up to {formatElapsed(MAX_RECORDING_SECONDS)} per take · uploaded as{" "}
-        {(uploadEstimate / 1024 / 1024).toFixed(1)}MB of {MAX_UPLOAD_MB}MB
-        {isRecording ? "" : " at full length"}
-      </p>
 
       {error ? (
-        <p
+        <div
           role="alert"
-          className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+          className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-relaxed text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300 sm:text-sm"
         >
           {error}
-        </p>
+        </div>
       ) : null}
 
       {saveWarning ? (
-        <p
+        <div
           role="status"
-          className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300 sm:text-sm"
         >
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>{saveWarning}</span>
-        </p>
+        </div>
       ) : null}
 
+      {/* Raw Transcript Box */}
       {transcript ? (
-        <div className="mt-5">
-          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
-              Raw transcript
-            </h3>
-            {detected?.language ? (
-              <p className="text-xs text-zinc-400">
-                Decoded as{" "}
-                <span className="font-medium text-zinc-600">
-                  {detected.language}
+        <div className="mt-6 rounded-2xl border border-stone-200/90 bg-stone-50/70 p-4 sm:p-5 dark:border-zinc-800 dark:bg-zinc-800/40">
+          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-600 dark:text-zinc-400">
+                Transcribed Audio
+              </h3>
+              {detected?.language ? (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                  {detected.language.toUpperCase()}
+                  {detected.duration ? ` · ${formatElapsed(Math.round(detected.duration))}` : ""}
                 </span>
-                {detected.duration
-                  ? ` · ${formatElapsed(Math.round(detected.duration))}`
-                  : ""}
-              </p>
-            ) : null}
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              onClick={copyTranscript}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-stone-600 hover:bg-stone-200/70 hover:text-stone-900 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-white"
+            >
+              <Copy className="h-3.5 w-3.5" aria-hidden />
+              {copiedTranscript ? "Copied!" : "Copy text"}
+            </button>
           </div>
-          <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-zinc-50 px-3 py-2.5 text-sm leading-7 text-zinc-800">
+
+          <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-white p-3.5 text-sm leading-7 text-stone-800 shadow-inner sm:text-[15px] dark:bg-zinc-900 dark:text-zinc-200">
             {transcript}
           </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void structureNotes()}
+              disabled={busy || !transcript.trim()}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isStructuring ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden />
+              )}
+              {isStructuring ? "AI Generating Notes…" : "Generate Structured Notes & Flashcards"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* KEEP RECORDING BANNER FOR GUEST USERS */}
+      {requiresAuthToKeep && !isSaved ? (
+        <div className="mt-6 flex flex-col items-start justify-between gap-4 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-4 sm:flex-row sm:items-center sm:p-5 dark:border-emerald-900/60 dark:from-emerald-950/40 dark:to-teal-950/40">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow">
+              <BookmarkCheck className="h-5 w-5" aria-hidden />
+            </span>
+            <div>
+              <h4 className="text-sm font-bold text-stone-900 dark:text-white">
+                Want to keep this recording in your study library?
+              </h4>
+              <p className="mt-0.5 text-xs leading-relaxed text-stone-600 dark:text-zinc-300">
+                You generated notes as a guest. Sign in or create an account with
+                your email & password to save this lecture and study anytime.
+              </p>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={() => void structureNotes()}
-            disabled={busy || !transcript.trim()}
-            className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-zinc-900 px-5 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-900 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            onClick={() =>
+              openAuthModal(
+                "Sign in with your email & password to keep this lecture in your library.",
+                () => {
+                  void saveLectureToAccount();
+                }
+              )
+            }
+            disabled={savingToLibrary}
+            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-stone-900 px-5 text-xs font-semibold text-white shadow transition hover:bg-stone-800 disabled:opacity-50 dark:bg-emerald-600 dark:hover:bg-emerald-500"
           >
-            {isStructuring ? (
+            {savingToLibrary ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             ) : (
-              <Sparkles className="h-4 w-4" aria-hidden />
+              <Lock className="h-3.5 w-3.5" aria-hidden />
             )}
-            {isStructuring ? "Structuring…" : "Structure Notes"}
+            Sign In to Keep Recording
           </button>
+        </div>
+      ) : null}
+
+      {/* SUCCESS SAVED BANNER */}
+      {isSaved ? (
+        <div className="mt-5 flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300 sm:text-sm">
+          <span className="inline-flex items-center gap-2 font-medium">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden />
+            Saved permanently to your account library!
+          </span>
+          {savedId ? (
+            <Link
+              href={`/lectures/${savedId}`}
+              className="inline-flex items-center gap-1 font-semibold text-emerald-900 underline hover:text-emerald-700 dark:text-emerald-200"
+            >
+              Open saved lecture
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            </Link>
+          ) : null}
         </div>
       ) : null}
     </section>

@@ -357,6 +357,24 @@ export async function getLectureById(
 }
 
 /**
+ * Fetch all recent lectures belonging to an owner.
+ */
+export async function getUserLectures(
+  ownerId: string,
+  limit = 20
+): Promise<Lecture[]> {
+  if (!ownerId) return [];
+  const { db } = await connectDb();
+  const collection = db.collection<MongoLectureDoc>(COLLECTION);
+  const docs = await collection
+    .find({ ownerId })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+  return docs.map(toLecture);
+}
+
+/**
  * A lecture is only usable if it carries all three note arrays; the detail page
  * offers to generate notes when this is false.
  */

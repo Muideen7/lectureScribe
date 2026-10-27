@@ -81,6 +81,15 @@ export function createOwnerToken(): {
   return { ownerId, token: `${payload}.${sign(payload)}` };
 }
 
+/** Mint a signed owner token for an explicit user or owner id. */
+export function createOwnerTokenForId(ownerId: string): {
+  ownerId: string;
+  token: string;
+} {
+  const payload = `${TOKEN_VERSION}.${ownerId}`;
+  return { ownerId, token: `${payload}.${sign(payload)}` };
+}
+
 /**
  * Verify a cookie value and return its owner id, or null if it is missing,
  * malformed, signed with a different secret, or from an older format.
