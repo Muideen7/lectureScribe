@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en-NG">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="file:///home/frontendgeek/.config/opencode/skills/web-designer/assets/viewport.css" />
+<link rel="stylesheet" href="fonts/fonts-bricolage.css" />
+<link rel="stylesheet" href="fonts/fonts-newsreader.css" />
+<link rel="stylesheet" href="fonts/fonts-unbounded.css" />
+<link rel="stylesheet" href="fonts/fonts-hanken.css" />
+<title>LectureScribe — three directions</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════
+   A · THE BOARD — a lecture hall after the lecturer leaves
+   place · dark ground · grotesque · shape language · accent yellow
+   ══════════════════════════════════════════════════════════════════ */
+.board {
+  --ground:#12261C; --ink:#F1EEE0; --ink-2:#A9B6AC; --ink-3:#8A998E;
+  --rule:rgba(214,226,208,.17); --chalk:#F5DE5A; --accent:#F5DE5A;
+  --accent2:#E08A3C; --tile:#F5DE5A; --on-tile:#12261C;
+  background:var(--ground); color:var(--ink);
+  font-family:"Hanken Grotesk", sans-serif;
+}
+.board * { box-sizing:border-box; }
+.board .pad { padding:0 20px 40px; }
+.board header {
+  display:flex; align-items:center; gap:9px;
+  padding:16px 20px 14px; position:sticky; top:0; z-index:5;
+  background:rgba(18,38,28,.86);
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);
+  backdrop-filter:blur(14px) saturate(1.3);
+  border-bottom:1px solid var(--rule);
+}
+.board .mark { width:30px; height:30px; border-radius:9px; background:var(--tile); display:grid; place-items:center; flex:none; }
+.board .word { font-family:"Bricolage Grotesque", sans-serif; font-variation-settings:"wght" 640; font-size:15px; letter-spacing:-.01em; }
+.board .ico { margin-left:auto; width:44px; height:44px; display:grid; place-items:center; color:var(--ink-2); }
+.board .live { display:flex; align-items:center; gap:8px; padding:18px 0 2px; }
+.board .live .dot { width:9px; height:9px; border-radius:50%; background:var(--chalk); }
+.board .live .t { font-size:13px; font-weight:600; color:var(--chalk); letter-spacing:.06em; }
+.board .live .sz { margin-left:auto; font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.board .clock {
+  font-family:"Bricolage Grotesque", sans-serif;
+  font-variation-settings:"wght" 300, "wdth" 78;
+  font-size:96px; line-height:.94; letter-spacing:-.045em;
+  font-variant-numeric:tabular-nums lining-nums;
+  margin:2px 0 0;
+}
+.board .cap { display:flex; align-items:baseline; gap:10px; margin:6px 0 0; }
+.board .cap .mx { font-size:13px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.board .cap .say { margin-left:auto; font-size:12px; color:var(--ink-3); }
+.board .wave { display:block; width:100%; height:48px; margin:10px 0 0; }
+.board .hr { height:1px; background:var(--rule); margin:20px 0 0; }
+.board dl { margin:0; }
+.board .row { padding:14px 0 15px; border-bottom:1px solid var(--rule); }
+.board dt { font-size:12px; color:var(--ink-3); letter-spacing:.05em; margin:0 0 3px; }
+.board dd { margin:0; font-size:22px; font-weight:600; line-height:1.2; letter-spacing:-.015em; }
+.board dd .sml { font-size:17px; font-weight:500; color:var(--ink-2); }
+.board .caret { float:right; color:var(--ink-3); margin-top:3px; }
+.board .go {
+  margin-top:22px; width:100%; min-height:56px; border:0; border-radius:14px;
+  background:var(--chalk); color:var(--on-tile); cursor:pointer;
+  font-family:"Bricolage Grotesque", sans-serif; font-variation-settings:"wght" 640;
+  font-size:17px; letter-spacing:-.005em;
+  display:flex; align-items:center; justify-content:center; gap:10px;
+}
+.board .note { margin:12px 0 0; font-size:13px; line-height:1.5; color:var(--ink-3); max-width:34ch; }
+.board .sect { display:flex; align-items:baseline; gap:8px; margin:30px 0 0; }
+.board .sect h2 { margin:0; font-size:13px; font-weight:700; letter-spacing:.05em; color:var(--ink-2); }
+.board .sect .n { font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.board ul { list-style:none; margin:0; padding:0; }
+.board li { padding:13px 0 14px; border-bottom:1px solid var(--rule); }
+.board li .t { font-size:17px; font-weight:600; letter-spacing:-.01em; }
+.board li .m { margin-top:2px; font-size:13px; color:var(--ink-3); }
+.board li .m .warn { color:var(--accent2); }
+
+/* ══════════════════════════════════════════════════════════════════
+   B · THE PAGE — a ruled notebook, ballpoint blue
+   printed matter · light ground · serif · colour & material · accent blue
+   ══════════════════════════════════════════════════════════════════ */
+.page {
+  --ground:#F0EEE5; --ink:#1E1D18; --ink-2:#55514A; --ink-3:#6B6555;
+  --rule:rgba(30,29,24,.13); --grid:rgba(38,66,128,.075);
+  --accent:#1D4E96; --accent2:#9C4A18; --margin:#B24534; --tile:#1D4E96; --on-tile:#F6F2E6;
+  background:var(--ground); color:var(--ink);
+  font-family:"Hanken Grotesk", sans-serif;
+}
+.page * { box-sizing:border-box; }
+.page .grid-bg {
+  position:absolute; inset:0;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:22px 22px;
+}
+.page .mr { position:absolute; top:0; bottom:0; left:31px; width:1px; background:rgba(178,69,52,.42); }
+.page .holes { position:absolute; top:0; bottom:0; left:0; width:31px; }
+.page .holes i {
+  position:absolute; left:10px; width:11px; height:11px; border-radius:50%;
+  background:var(--ground); box-shadow:inset 0 1px 2px rgba(30,29,24,.4), 0 0 0 1px rgba(30,29,24,.14);
+}
+.page .holes i:nth-child(1) { top:120px; } .page .holes i:nth-child(2) { top:412px; } .page .holes i:nth-child(3) { top:704px; }
+.page .inner { position:relative; padding:0 20px 44px 47px; }
+.page header { display:flex; align-items:center; gap:9px; padding:18px 0 0; }
+.page .mark { width:29px; height:29px; border-radius:8px; background:var(--tile); display:grid; place-items:center; flex:none; }
+.page .word { font-family:"Newsreader", serif; font-weight:600; font-size:19px; letter-spacing:-.01em; }
+.page .date { margin:16px 0 0; font-family:"Newsreader", serif; font-style:italic; font-size:13px; color:var(--ink-3); }
+.page .hr { height:1px; background:var(--rule); margin:14px 0 0; }
+.page h1 { margin:20px 0 0; font-family:"Newsreader", serif; font-weight:500; font-size:40px; line-height:1.1; letter-spacing:-.025em; }
+.page h1 em { font-style:italic; font-weight:400; }
+.page .sub { margin:8px 0 0; font-size:14px; color:var(--ink-2); }
+.page .live { display:flex; align-items:center; gap:9px; margin:20px 0 0; }
+.page .live .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+.page .live .t { font-size:13px; font-weight:600; color:var(--accent); }
+.page .live .clock { margin-left:auto; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+.page .live .mx { font-size:13px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.page .ribbon { display:block; width:100%; height:26px; margin:10px 0 0; }
+.page .fields { margin:20px 0 0; }
+.page .f { padding:11px 0 12px; border-bottom:1px solid var(--rule); }
+.page .f dt { margin:0 0 2px; font-size:12px; letter-spacing:.05em; color:var(--ink-3); }
+.page .f dd { margin:0; font-size:17px; font-weight:500; letter-spacing:-.005em; }
+.page .go {
+  margin-top:24px; width:100%; min-height:56px; border:0; border-radius:999px;
+  background:var(--accent); color:var(--on-tile); cursor:pointer;
+  font-family:"Newsreader", serif; font-weight:600; font-size:17px;
+  display:flex; align-items:center; justify-content:center; gap:10px;
+}
+.page .note { margin:12px 0 0; font-family:"Newsreader", serif; font-style:italic; font-size:14px; line-height:1.55; color:var(--ink-2); max-width:36ch; }
+.page .tear { margin:26px 0 0; height:1px; background:repeating-linear-gradient(90deg, var(--rule) 0 5px, transparent 5px 10px); }
+.page .sect { display:flex; align-items:baseline; gap:8px; margin:18px 0 0; }
+.page .sect h2 { margin:0; font-size:12px; font-weight:700; letter-spacing:.06em; color:var(--ink-2); }
+.page .sect .n { font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.page ul { list-style:none; margin:0; padding:0; }
+.page li { padding:12px 0 13px; border-bottom:1px solid var(--rule); }
+.page li .t { font-family:"Newsreader", serif; font-size:17px; font-weight:500; letter-spacing:-.005em; }
+.page li .m { margin-top:1px; font-size:13px; color:var(--ink-3); }
+.page li .m .warn { color:var(--accent2); }
+
+/* ══════════════════════════════════════════════════════════════════
+   C · THE TAPE — a broadcast poster on a cobalt wall
+   media · colour field · rounded · illustration · accent orange
+   ══════════════════════════════════════════════════════════════════ */
+.wall {
+  --ground:#2044C8; --ink:#FBF6EA; --ink-2:rgba(251,246,234,.85); --ink-3:rgba(251,246,234,.75);
+  --rule:rgba(251,246,234,.2); --accent:#FF7A1C; --accent-ink:#FFB877;
+  --tile:#FF7A1C; --on-tile:#102A80;
+  background:var(--ground); color:var(--ink);
+  font-family:"Hanken Grotesk", sans-serif;
+}
+.wall * { box-sizing:border-box; }
+.wall .pad { padding:0 20px 40px; }
+.wall header { display:flex; align-items:center; gap:9px; padding:16px 20px 0; }
+.wall .mark { width:30px; height:30px; border-radius:9px; background:var(--tile); display:grid; place-items:center; flex:none; }
+.wall .word { font-family:"Unbounded", sans-serif; font-weight:600; font-size:14px; }
+.wall .dat { margin-left:auto; font-size:12px; letter-spacing:.1em; color:var(--ink-3); }
+.wall .onair { display:flex; align-items:center; gap:8px; margin-top:20px; }
+.wall .onair .dot { width:10px; height:10px; border-radius:50%; background:var(--accent); }
+.wall .onair .t { font-family:"Unbounded", sans-serif; font-weight:700; font-size:12px; letter-spacing:.14em; color:var(--accent-ink); }
+.wall .onair .sz { margin-left:auto; font-size:12px; color:var(--ink-3); }
+.wall .clock {
+  font-family:"Unbounded", sans-serif; font-weight:800; font-size:66px; line-height:1;
+  letter-spacing:-.03em; font-variant-numeric:tabular-nums; margin:8px 0 0;
+}
+.wall .mx { margin:6px 0 0; font-size:12px; letter-spacing:.1em; color:var(--ink-3); }
+
+.wall h1 { margin:16px 0 0; font-family:"Unbounded", sans-serif; font-weight:600; font-size:22px; line-height:1.24; letter-spacing:-.015em; }
+.wall .sub { margin:6px 0 0; font-size:14px; color:var(--ink-2); }
+.wall .go {
+  margin-top:22px; width:100%; min-height:56px; border:0; border-radius:999px;
+  background:var(--accent); color:var(--on-tile); cursor:pointer;
+  font-family:"Unbounded", sans-serif; font-weight:700; font-size:15px; letter-spacing:-.005em;
+  display:flex; align-items:center; justify-content:center; gap:10px;
+}
+.wall .note { margin:12px 0 0; font-size:13px; line-height:1.5; color:var(--ink-2); max-width:34ch; }
+.wall .sect { display:flex; align-items:baseline; gap:8px; margin:28px 0 0; }
+.wall .sect h2 { margin:0; font-family:"Unbounded", sans-serif; font-weight:600; font-size:12px; letter-spacing:.1em; color:var(--ink-2); }
+.wall .sect .n { font-family:"Unbounded", sans-serif; font-weight:500; font-size:12px; color:var(--ink-3); }
+.wall ul { list-style:none; margin:0; padding:0; }
+.wall li { padding:13px 0 14px; border-bottom:1px solid var(--rule); }
+.wall li .t { font-family:"Unbounded", sans-serif; font-weight:500; font-size:17px; letter-spacing:-.01em; line-height:1.3; }
+.wall li .m { margin-top:3px; font-size:13px; color:var(--ink-3); }
+.wall li .m .warn { color:var(--accent-ink); }
+.wall .tapewrap { position:relative; margin:14px 0 0; }
+.wall .tape { display:block; width:100%; height:auto; }
+.wall .tape-label, .wall .tape-side {
+  position:absolute; top:11.5%; height:28.4%; display:flex; align-items:center;
+  font-family:"Hanken Grotesk", sans-serif; font-weight:700; color:var(--on-tile);
+  font-size:20px; letter-spacing:.05em;
+}
+.wall .tape-label { left:11.3%; }
+.wall .tape-side { right:11.3%; font-size:13px; letter-spacing:.09em; }
+
+/* the mark: one stroke, a wave that settles into a written line */
+.mk { display:block; width:20px; height:20px; }
+
+/*
+ * The kit puts `container-type: size` on .frame, which applies size containment
+ * and makes `height: auto` resolve to 0 — so a whole-page frame can never grow
+ * past --vp-h and its tail is silently clipped. Inline-size containment keeps
+ * the container query but lets the frame take its real height.
+ */
+.frame[data-scroll] { height:auto; container-type:inline-size; overflow:visible; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════ A · THE BOARD ══════════════════════ -->
+<section class="frame board" data-name="a-board" data-scroll data-scrolls>
+  <header>
+    <span class="mark">
+      <svg class="mk" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M2 12c1.6-4.4 3.2-4.4 4.8 0s3.2 4.4 4.8 0 3.2-4.4 4.8 0" stroke="var(--on-tile)" stroke-width="2.1" stroke-linecap="round"/>
+        <path d="M17 12h5" stroke="var(--on-tile)" stroke-width="2.1" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span class="word">LectureScribe</span>
+    <span class="ico" data-tap>
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+        <circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.4 15.4 4.6 4.6"/>
+      </svg>
+    </span>
+  </header>
+
+  <div class="pad">
+    <div class="live">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="t">RECORDING</span>
+      <span class="sz">8.2MB of 25MB</span>
+    </div>
+
+    <p class="clock">02:14</p>
+    <p class="cap"><span class="mx">of 05:00 on this take</span><span class="say">English (Nigerian, Pidgin)</span></p>
+
+    <svg class="wave" viewBox="0 0 316 48" fill="none" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+      <polyline stroke="rgba(214,226,208,.5)"
+        points="0.0,11.9 0.0,36.1 5.3,17.6 5.3,30.4 10.5,13.5 10.5,34.5 15.8,19.4 15.8,28.6 21.1,15.4 21.1,32.6 26.3,20.3 26.3,27.7 31.6,16.1 31.6,31.9 36.9,11.3 36.9,36.7 42.1,17.4 42.1,30.6 47.4,19.2 47.4,28.8 52.7,13.2 52.7,34.8 57.9,20.5 57.9,27.5 63.2,14.5 63.2,33.5 68.5,8.9 68.5,39.1 73.7,17.6 73.7,30.4 79.0,12.7 79.0,35.3 84.3,18.9 84.3,29.1 89.5,14.6 89.5,33.4 94.8,8.3 94.8,39.7 100.1,15.1 100.1,32.9 105.3,17.5 105.3,30.5 110.6,9.6 110.6,38.4 115.9,18.8 115.9,29.2 121.1,11.3 121.1,36.7 126.4,4.9 126.4,43.1 131.7,15.1 131.7,32.9 136.9,17.4 136.9,30.6 142.2,8.6 142.2,39.4 147.5,11.4 147.5,36.6 152.7,15.5 152.7,32.5 158.0,5.1 158.0,42.9 163.3,17.9 163.3,30.1 168.5,9.2 168.5,38.8 173.8,2.0 173.8,46.0 179.1,12.6 179.1,35.4 184.3,15.7 184.3,32.3 189.6,4.8 189.6,43.2 194.9,9.9 194.9,38.1 200.1,16.0 200.1,32.0 205.4,2.0 205.4,46.0 210.7,13.0 210.7,35.0 215.9,5.5 215.9,42.5 221.2,2.0 221.2,46.0 226.5,9.4 226.5,38.6 231.7,13.4 231.7,34.6 237.0,2.7 237.0,45.3 242.3,16.8 242.3,31.2 247.5,2.0 247.5,46.0 252.8,10.4 252.8,37.6 258.1,4.0 258.1,44.0 263.3,2.0 263.3,46.0 268.6,13.1 268.6,34.9 273.9,2.0 273.9,46.0 279.1,7.2 279.1,40.8 284.4,13.7 284.4,34.3 289.7,2.0 289.7,46.0 294.9,3.4 294.9,44.6"/>
+      <polyline stroke="var(--chalk)"
+        points="294.9,3.4 294.9,44.6 300.2,2.0 300.2,46.0 305.5,9.5 305.5,38.5 310.7,2.0 310.7,46.0 316.0,2.0 316.0,46.0"/>
+    </svg>
+
+    <div class="hr"></div>
+
+    <dl>
+      <div class="row">
+        <dt>Lecture</dt>
+        <dd>Intro to Photosynthesis</dd>
+      </div>
+      <div class="row">
+        <dt>Course</dt>
+        <dd class="sml">BIO 201</dd>
+      </div>
+      <div class="row">
+        <dt>Language spoken <svg class="caret" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></dt>
+        <dd class="sml">English (Nigerian, Pidgin)</dd>
+      </div>
+    </dl>
+
+    <button class="go" type="button">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect width="14" height="14" rx="2.5"/></svg>
+      Stop and save
+    </button>
+    <p class="note">Audio stays on this phone until you save. Then it is transcribed and kept private to this browser.</p>
+
+    <div class="sect"><h2>SAVED LECTURES</h2><span class="n">2</span></div>
+    <ul>
+      <li>
+        <div class="t">Cellular Respiration</div>
+        <div class="m">BIO 201 · 3m 12s · 12 Jan</div>
+      </li>
+      <li>
+        <div class="t">Oro in Yorùbá Linguistics</div>
+        <div class="m">ENG 304 · 4m 48s · <span class="warn">no notes yet</span></div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════════════════ B · THE PAGE ══════════════════════ -->
+<section class="frame page" data-name="b-page" data-scroll data-scrolls>
+  <div class="grid-bg" aria-hidden="true"></div>
+  <div class="mr" aria-hidden="true"></div>
+  <div class="holes" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <div class="inner">
+    <header>
+      <span class="mark">
+        <svg class="mk" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M2 12c1.6-4.4 3.2-4.4 4.8 0s3.2 4.4 4.8 0 3.2-4.4 4.8 0" stroke="var(--on-tile)" stroke-width="2.1" stroke-linecap="round"/>
+          <path d="M17 12h5" stroke="var(--on-tile)" stroke-width="2.1" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="word">LectureScribe</span>
+    </header>
+    <p class="date">Tuesday 6 October, Lagos</p>
+    <div class="hr"></div>
+
+    <h1>Intro to <em>Photosynthesis</em></h1>
+    <p class="sub">BIO 201 · English (Nigerian, Pidgin)</p>
+
+    <div class="live">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="t">Recording</span>
+      <span class="clock">02:14</span>
+      <span class="mx">/ 05:00</span>
+    </div>
+    <svg class="ribbon" viewBox="0 0 300 26" fill="none" aria-hidden="true">
+      <path d="M0 18h300" stroke="rgba(30,29,24,.28)" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M0 18h226" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round"/>
+      <circle cx="226" cy="18" r="3.6" fill="var(--accent)"/>
+    </svg>
+
+    <div class="fields">
+      <div class="f"><dt>Course</dt><dd>BIO 201</dd></div>
+      <div class="f"><dt>Language spoken</dt><dd>English (Nigerian, Pidgin)</dd></div>
+    </div>
+
+    <button class="go" type="button">
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect width="14" height="14" rx="2.5"/></svg>
+      Stop and save
+    </button>
+    <p class="note">Audio stays on this phone until you save, then it is transcribed and kept in this browser.</p>
+
+    <div class="tear"></div>
+    <div class="sect"><h2>SAVED LECTURES</h2><span class="n">2</span></div>
+    <ul>
+      <li>
+        <div class="t">Cellular Respiration</div>
+        <div class="m">BIO 201 · 3m 12s · 12 Jan</div>
+      </li>
+      <li>
+        <div class="t">Oro in Yorùbá Linguistics</div>
+        <div class="m">ENG 304 · 4m 48s · <span class="warn">no notes yet</span></div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════════════════ C · THE TAPE ══════════════════════ -->
+<section class="frame wall" data-name="c-tape" data-scroll data-scrolls>
+  <div class="pad">
+    <header>
+      <span class="mark">
+        <svg class="mk" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M2 12c1.6-4.4 3.2-4.4 4.8 0s3.2 4.4 4.8 0 3.2-4.4 4.8 0" stroke="var(--on-tile)" stroke-width="2.1" stroke-linecap="round"/>
+          <path d="M17 12h5" stroke="var(--on-tile)" stroke-width="2.1" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="word">LectureScribe</span>
+      <span class="dat">6 OCT</span>
+    </header>
+
+    <div class="onair">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="t">ON AIR</span>
+      <span class="sz">8.2MB of 25MB</span>
+    </div>
+
+    <p class="clock">02:14</p>
+    <p class="mx">OF 05:00 ON THIS TAKE</p>
+
+    <div class="tapewrap">
+      <svg class="tape" viewBox="0 0 300 148" fill="none" aria-hidden="true">
+        <rect x="1" y="4" width="298" height="140" rx="13" fill="#FBF6EA"/>
+        <rect x="22" y="17" width="256" height="42" rx="4" fill="#FF7A1C"/>
+        <rect x="38" y="71" width="224" height="56" rx="9" fill="#1C3CB4"/>
+        <circle cx="104" cy="99" r="21" fill="#FBF6EA"/><circle cx="104" cy="99" r="12.5" fill="#1C3CB4"/>
+        <circle cx="196" cy="99" r="21" fill="#FBF6EA"/><circle cx="196" cy="99" r="12.5" fill="#1C3CB4"/>
+        <rect x="104" y="91" width="92" height="16" fill="#3355D8"/>
+        <circle cx="22" cy="130" r="5.5" fill="#6E7789"/><circle cx="278" cy="130" r="5.5" fill="#6E7789"/>
+        <rect x="238" y="117" width="24" height="10" rx="2" fill="#6E7789"/>
+      </svg>
+      <span class="tape-label">BIO 201</span>
+      <span class="tape-side">SIDE A</span>
+    </div>
+
+    <h1>Intro to Photosynthesis</h1>
+    <p class="sub">BIO 201 · English (Nigerian, Pidgin)</p>
+
+    <button class="go" type="button">
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect width="14" height="14" rx="2.5"/></svg>
+      Stop and save
+    </button>
+    <p class="note">Audio stays on this phone until you save. Then it is transcribed and kept private to this browser.</p>
+
+    <div class="sect"><h2>SAVED LECTURES</h2><span class="n">2</span></div>
+    <ul>
+      <li>
+        <div class="t">Cellular Respiration</div>
+        <div class="m">BIO 201 · 3m 12s · 12 Jan</div>
+      </li>
+      <li>
+        <div class="t">Oro in Yorùbá Linguistics</div>
+        <div class="m">ENG 304 · 4m 48s · <span class="warn">no notes yet</span></div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+</body>
+</html>

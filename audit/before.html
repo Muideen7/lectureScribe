@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en-NG">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="stylesheet" href="file:///home/frontendgeek/.config/opencode/skills/web-designer/assets/viewport.css" />
+<title>LectureScribe — before</title>
+<style>
+  :root {
+    --font-geist-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --app-background: #fafaf9;
+    --app-surface: #ffffff;
+    --app-foreground: #18181b;
+    --card-face-bg: #ffffff;
+    --card-face-fg: #18181b;
+    --card-back-bg: #18181b;
+    --card-back-fg: #fafafa;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --app-background: #0a0a0a;
+      --app-surface: #18181b;
+      --app-foreground: #ededed;
+      --card-face-bg: #18181b;
+      --card-face-fg: #ededed;
+      --card-back-bg: #fafafa;
+      --card-back-fg: #18181b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--app-background);
+    color: var(--app-foreground);
+    font-family: var(--font-geist-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+  }
+  .safe-area { padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); }
+  .safe-area-top { padding-top: env(safe-area-inset-top); }
+  .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .min-h-dvh { min-height: 100dvh; }
+  .flex { display: flex; }
+  .flex-col { flex-direction: column; }
+  .flex-1 { flex: 1; }
+  .items-center { align-items: center; }
+  .items-start { align-items: flex-start; }
+  .justify-center { justify-content: center; }
+  .gap-1 { gap: 0.25rem; }
+  .gap-2 { gap: 0.5rem; }
+  .gap-3 { gap: 0.75rem; }
+  .gap-4 { gap: 1rem; }
+  .gap-6 { gap: 1.5rem; }
+  .gap-8 { gap: 2rem; }
+  .grid { display: grid; }
+  .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+  .mx-auto { margin-left: auto; margin-right: auto; }
+  .w-full { width: 100%; }
+  .max-w-4xl { max-width: 56rem; }
+  .shrink-0 { flex-shrink: 0; }
+  .min-w-0 { min-width: 0; }
+  .space-y-2 > * + * { margin-top: 0.5rem; }
+  .space-y-3 > * + * { margin-top: 0.75rem; }
+  .mt-0\.5 { margin-top: 0.125rem; }
+  .mt-1 { margin-top: 0.25rem; }
+  .mt-1\.5 { margin-top: 0.375rem; }
+  .mt-2 { margin-top: 0.5rem; }
+  .mt-3 { margin-top: 0.75rem; }
+  .mt-4 { margin-top: 1rem; }
+  .mt-5 { margin-top: 1.25rem; }
+  .mb-1\.5 { margin-bottom: 0.375rem; }
+  .mb-2 { margin-bottom: 0.5rem; }
+  .mb-3 { margin-bottom: 0.75rem; }
+  .mb-4 { margin-bottom: 1rem; }
+  .mb-5 { margin-bottom: 1.25rem; }
+  .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  .py-2\.5 { padding-top: 0.625rem; padding-bottom: 0.625rem; }
+  .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+  .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+  .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+  .py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+  .py-16 { padding-top: 4rem; padding-bottom: 4rem; }
+  .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+  .px-4 { padding-left: 1rem; padding-right: 1rem; }
+  .px-5 { padding-left: 1.25rem; padding-right: 1.25rem; }
+  .px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+  .p-4 { padding: 1rem; }
+  .pb-10 { padding-bottom: 2.5rem; }
+  .text-center { text-align: center; }
+  .text-left { text-align: left; }
+  .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+  .text-xs { font-size: 0.75rem; line-height: 1rem; }
+  .text-base { font-size: 1rem; line-height: 1.5rem; }
+  .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+  .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+  .text-2xl { font-size: 1.5rem; line-height: 2rem; }
+  .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+  .text-\[0\.625rem\] { font-size: 0.625rem; }
+  .text-\[15px\] { font-size: 15px; }
+  .font-medium { font-weight: 500; }
+  .font-semibold { font-weight: 600; }
+  .font-serif { font-family: Georgia, "Times New Roman", serif; }
+  .tracking-tight { letter-spacing: -0.025em; }
+  .tracking-wider { letter-spacing: 0.05em; }
+  .tracking-\[0\.2em\] { letter-spacing: 0.2em; }
+  .leading-5 { line-height: 1.25rem; }
+  .leading-6 { line-height: 1.5rem; }
+  .leading-7 { line-height: 1.75rem; }
+  .leading-tight { line-height: 1.25; }
+  .uppercase { text-transform: uppercase; }
+  .whitespace-pre-wrap { white-space: pre-wrap; }
+  .break-words { overflow-wrap: break-word; }
+  .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .block { display: block; }
+  .inline-flex { display: inline-flex; }
+  .inline-block { display: inline-block; }
+  .cursor-pointer { cursor: pointer; }
+  .rounded-lg { border-radius: 0.5rem; }
+  .rounded-xl { border-radius: 0.75rem; }
+  .rounded-2xl { border-radius: 1rem; }
+  .rounded-full { border-radius: 9999px; }
+  .border { border-width: 1px; }
+  .border-b { border-bottom-width: 1px; }
+  .border-zinc-200 { border-color: #e4e4e7; }
+  .border-zinc-300 { border-color: #d4d4d8; }
+  .border-zinc-100 { border-color: #f4f4f5; }
+  .border-stone-200 { border-color: #e7e5e4; }
+  .border-amber-200 { border-color: #fde68a; }
+  .bg-white { background-color: #ffffff; }
+  .bg-white\/90 { background-color: rgba(255,255,255,0.9); }
+  .bg-zinc-50 { background-color: #fafafa; }
+  .bg-zinc-900 { background-color: #18181b; }
+  .bg-zinc-100 { background-color: #f4f4f5; }
+  .bg-red-50 { background-color: #fef2f2; }
+  .bg-red-600 { background-color: #dc2626; }
+  .bg-amber-50 { background-color: #fffbeb; }
+  .bg-stone-50 { background-color: #fafaf9; }
+  .text-white { color: #ffffff; }
+  .text-zinc-400 { color: #a1a1aa; }
+  .text-zinc-500 { color: #71717a; }
+  .text-zinc-600 { color: #52525b; }
+  .text-zinc-700 { color: #3f3f46; }
+  .text-zinc-800 { color: #27272a; }
+  .text-zinc-900 { color: #18181b; }
+  .text-stone-700 { color: #44403c; }
+  .text-stone-500 { color: #78716c; }
+  .text-red-700 { color: #b91c1c; }
+  .text-amber-800 { color: #92400e; }
+  .text-amber-900 { color: #78350f; }
+  .text-amber-600 { color: #d97706; }
+  .hover\:bg-zinc-700:hover { background-color: #3f3f46; }
+  .hover\:bg-zinc-100:hover { background-color: #f4f4f5; }
+  .hover\:border-zinc-300:hover { border-color: #d4d4d8; }
+  .hover\:bg-white:hover { background-color: #ffffff; }
+  .hover\:bg-red-500:hover { background-color: #ef4444; }
+  .focus\:border-zinc-900:focus { border-color: #18181b; }
+  .focus\:outline-none:focus { outline: 2px solid transparent; outline-offset: 2px; }
+  .disabled\:opacity-50:disabled { opacity: 0.5; }
+  .disabled\:opacity-60:disabled { opacity: 0.6; }
+  .disabled\:cursor-not-allowed:disabled { cursor: not-allowed; }
+  .transition { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter; transition-timing-function: cubic-bezier(0.4,0,0.2,1); transition-duration: 150ms; }
+  .backdrop-blur { backdrop-filter: blur(8px); }
+  .shadow-sm { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
+  .sticky { position: sticky; }
+  .top-0 { top: 0; }
+  .z-10 { z-index: 10; }
+  .min-h-9 { min-height: 2.25rem; }
+  .min-h-11 { min-height: 2.75rem; }
+  .h-9 { height: 2.25rem; }
+  .h-10 { height: 2.5rem; }
+  .w-9 { width: 2.25rem; }
+  .w-10 { width: 2.5rem; }
+  .h-4 { height: 1rem; }
+  .w-4 { width: 1rem; }
+  .h-5 { height: 1.25rem; }
+  .w-5 { width: 1.25rem; }
+  .h-10 { height: 2.5rem; }
+  .w-10 { width: 2.5rem; }
+  .h-3\.5 { height: 0.875rem; }
+  .w-3\.5 { width: 0.875rem; }
+  .h-2\.5 { height: 0.625rem; }
+  .w-2\.5 { width: 0.625rem; }
+  .max-h-56 { max-height: 14rem; }
+  .max-h-72 { max-height: 18rem; }
+  .max-h-\[28rem\] { max-height: 28rem; }
+  .max-h-\[36rem\] { max-height: 36rem; }
+  .overflow-y-auto { overflow-y: auto; }
+  .overflow-visible { overflow: visible; }
+  .max-w-sm { max-width: 24rem; }
+  .align-text-bottom { vertical-align: text-bottom; }
+  .items-baseline { align-items: baseline; }
+  .justify-between { justify-content: space-between; }
+  .flex-wrap { flex-wrap: wrap; }
+  .gap-x-3 { column-gap: 0.75rem; }
+  .gap-x-4 { column-gap: 1rem; }
+  .gap-y-1 { row-gap: 0.25rem; }
+  .ml-2 { margin-left: 0.5rem; }
+  .animate-pulse { animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+  .animate-spin { animation: spin 1s linear infinite; }
+  @keyframes pulse { 50% { opacity: 0.5; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .details summary { list-style: none; }
+  .details summary::-webkit-details-marker { display: none; }
+  .flashcard { perspective: 1000px; min-height: 8rem; }
+  .flashcard-inner { display: grid; height: 100%; transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.4,0.2,0.2,1); }
+  .flashcard-front, .flashcard-back { grid-area: 1 / 1; display: flex; align-items: center; justify-content: center; padding: 1rem; border-radius: 0.75rem; border: 1px solid rgba(24,24,27,0.15); backface-visibility: hidden; -webkit-backface-visibility: hidden; text-align: center; overflow-wrap: break-word; }
+  .flashcard-front { background: var(--card-face-bg); color: var(--card-face-fg); }
+  .flashcard-back { background: var(--card-back-bg); color: var(--card-back-fg); transform: rotateY(180deg); }
+  .flashcard-inner[data-flipped="true"] { transform: rotateY(180deg); }
+  @media (min-width: 640px) {
+    .sm\:py-4 { padding-top: 1rem; padding-bottom: 1rem; }
+    .sm\:py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+    .sm\:gap-8 { gap: 2rem; }
+    .sm\:p-6 { padding: 1.5rem; }
+    .sm\:p-5 { padding: 1.25rem; }
+    .sm\:text-xs { font-size: 0.75rem; }
+    .sm\:text-sm { font-size: 0.875rem; }
+    .sm\:text-\[15px\] { font-size: 15px; }
+    .sm\:text-2xl { font-size: 1.5rem; }
+    .sm\:text-3xl { font-size: 1.875rem; }
+    .sm\:px-5 { padding-left: 1.25rem; padding-right: 1.25rem; }
+    .sm\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .sm\:w-auto { width: auto; }
+    .sm\:flex-row { flex-direction: row; }
+    .sm\:h-10 { height: 2.5rem; }
+    .sm\:w-10 { width: 2.5rem; }
+    .sm\:items-center { align-items: center; }
+  }
+  @media (min-width: 768px) {
+    .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .md\:max-h-none { max-height: none; }
+    .md\:overflow-visible { overflow: visible; }
+    .md\:max-h-\[36rem\] { max-height: 36rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ SCREEN 1: HOME (recorder + study + search) ============ -->
+<section class="frame" data-name="home" data-size="390x844" data-chrome="browser" data-scrolls>
+  <div class="flex min-h-dvh flex-col bg-stone-50 text-zinc-900">
+    <header class="sticky top-0 z-10 border-b border-stone-200 bg-white/90 backdrop-blur">
+      <div class="safe-area safe-area-top mx-auto flex w-full max-w-4xl items-center gap-3 py-3 sm:py-4">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white sm:h-10 sm:w-10">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        </span>
+        <div class="min-w-0">
+          <p class="text-[0.625rem] font-semibold uppercase tracking-[0.2em] text-zinc-500 sm:text-xs">LectureScribe</p>
+          <h1 class="font-serif text-lg font-semibold leading-tight sm:text-2xl">From lecture audio to study notes</h1>
+        </div>
+      </div>
+    </header>
+
+    <main class="safe-area mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 py-6 sm:gap-8 sm:py-8">
+      <div class="flex items-start gap-3 rounded-2xl border border-stone-200 bg-amber-50 p-4 text-sm leading-6 text-stone-700">
+        <svg class="mt-0.5 h-5 w-5 shrink-0 text-stone-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2v3.5a2 2 0 0 1-.2.8L4.7 15a2 2 0 0 0 .4 2.5 2 2 0 0 0 2.6.5L10 14.5V22a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-7.5l2.3 6.3a2 2 0 0 0 2.6-.5 2 2 0 0 0 .4-2.5l-5.1-9.7a2 2 0 0 1-.2-.8V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg>
+        <p>Record a lecture with your microphone — up to 5 minutes per take. Pick the language being spoken so Nigerian English, Pidgin, Yorùbá, Igbo and Hausa transcribe accurately. Best in a quiet room.</p>
+      </div>
+
+      <!-- Install prompt -->
+      <div class="safe-area flex items-start gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <svg class="mt-0.5 h-5 w-5 shrink-0 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        <p class="min-w-0 flex-1 text-sm leading-6 text-zinc-700">Add LectureScribe to your home screen: tap <svg class="inline h-4 w-4 align-text-bottom" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> <span class="font-medium">Share</span>, then <span class="font-medium">Add to Home Screen</span>.</p>
+        <button type="button" aria-label="Dismiss install hint" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-100">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Audio recorder -->
+      <section aria-label="Lecture recorder" class="w-full rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label for="lecture-title" class="mb-1.5 block text-sm font-medium text-zinc-700">Lecture title</label>
+            <input id="lecture-title" type="text" value="" placeholder="e.g. Intro to Photosynthesis" class="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none sm:text-sm" />
+          </div>
+          <div>
+            <label for="lecture-course" class="mb-1.5 block text-sm font-medium text-zinc-700">Course <span class="font-normal text-zinc-400">(optional)</span></label>
+            <input id="lecture-course" type="text" value="" placeholder="e.g. BIO 201" class="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none sm:text-sm" />
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <label for="lecture-language" class="mb-1.5 block text-sm font-medium text-zinc-700">Language spoken in the lecture</label>
+          <select id="lecture-language" class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-base text-zinc-900 focus:border-zinc-900 focus:outline-none sm:text-sm">
+            <option value="en">English (Nigerian, Pidgin, Ghanaian)</option>
+            <option value="yo">Yorùbá</option>
+            <option value="ig">Igbo</option>
+            <option value="ha">Hausa</option>
+            <option value="pcm">Nigerian Pidgin</option>
+            <option value="fr">French</option>
+          </select>
+          <p id="lecture-language-hint" class="mt-1.5 text-xs leading-5 text-zinc-500">English — picks up Nigerian English, Pidgin and Ghanaian English.</p>
+        </div>
+
+        <details class="details mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+          <summary class="cursor-pointer text-sm font-medium text-zinc-700">Add course words to recognise</summary>
+          <div class="mt-3">
+            <label for="lecture-terms" class="sr-only">Course words and names</label>
+            <input id="lecture-terms" type="text" value="" placeholder="e.g. Professor Adeyemi, photosynthesis, JSTOR" class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none sm:text-sm" />
+            <p class="mt-1.5 text-xs leading-5 text-zinc-500">Names and terms you add here are biased into the transcription, so they are spelled correctly instead of guessed.</p>
+          </div>
+        </details>
+
+        <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button type="button" class="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+            Start Recording
+          </button>
+          <div aria-live="polite" class="text-sm text-zinc-600"></div>
+        </div>
+        <p class="mt-2 text-xs text-zinc-400">Up to 05:00 per take · uploaded as 0.0MB of 25MB at full length</p>
+
+        <div class="mt-5">
+          <div class="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h3 class="text-sm font-semibold uppercase tracking-wider text-zinc-500">Raw transcript</h3>
+            <p class="text-xs text-zinc-400">Decoded as <span class="font-medium text-zinc-600">en</span> · 03:12</p>
+          </div>
+          <p class="max-h-56 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-zinc-50 px-3 py-2.5 text-sm leading-7 text-zinc-800">So today we begin our look at photosynthesis. The equation is simple on paper: six molecules of carbon dioxide plus six of water, in the presence of light and chlorophyll, yield one molecule of glucose and six of oxygen. But the path inside the leaf is anything but simple. Light reactions happen in the thylakoid membranes, where chlorophyll absorbs photons and splits water, releasing oxygen as a by-product. The Calvin cycle then fixes carbon in the stroma, using ATP and NADPH from the light reactions to build sugar. Two things students often mix up: the light reactions need light, the Calvin cycle does not, strictly speaking, and oxygen comes from water, not from carbon dioxide.</p>
+          <button type="button" class="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-zinc-900 px-5 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-900 hover:text-white sm:w-auto">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+            Structure Notes
+          </button>
+        </div>
+      </section>
+
+      <p class="text-center text-sm text-zinc-400">Your transcript and structured notes will appear here after recording.</p>
+
+      <!-- Search -->
+      <section aria-label="Search past lectures" class="w-full rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6">
+        <h2 class="flex items-center gap-2 text-base font-semibold text-zinc-900">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+          Past lectures
+        </h2>
+        <p class="mt-1 text-sm text-zinc-500">Search the lectures saved in this browser, by meaning rather than keywords. Tap a result to open it.</p>
+        <form class="mt-4 flex gap-2">
+          <input type="search" placeholder="e.g. how does photosynthesis work?" class="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-2.5 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:outline-none sm:text-sm" />
+          <button type="submit" class="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-zinc-900 px-4 text-sm font-medium text-white transition hover:bg-zinc-700 sm:px-5">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            Search
+          </button>
+        </form>
+        <ul class="mt-4 space-y-3">
+          <li>
+            <a href="#" class="block rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 transition hover:border-zinc-300 hover:bg-white">
+              <div class="flex items-baseline justify-between gap-2">
+                <p class="text-sm font-semibold text-zinc-900">Intro to Photosynthesis <span class="ml-2 font-normal text-zinc-500">BIO 201</span></p>
+                <span class="shrink-0 text-xs tabular-nums text-zinc-400">94% match</span>
+              </div>
+              <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
+                <span class="min-w-0 truncate">Light reactions · Calvin cycle · Chlorophyll</span>
+                <span>12 Jan 2026</span>
+              </div>
+              <p class="mt-1.5 text-sm leading-6 text-zinc-700">So today we begin our look at photosynthesis. The equation is simple on paper: six molecules of carbon dioxide plus six of water…</p>
+              <span class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-zinc-500">Open lecture <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span>
+            </a>
+          </li>
+          <li>
+            <a href="#" class="block rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 transition hover:border-zinc-300 hover:bg-white">
+              <div class="flex items-baseline justify-between gap-2">
+                <p class="text-sm font-semibold text-zinc-900">Cellular Respiration <span class="ml-2 font-normal text-zinc-500">BIO 201</span></p>
+                <span class="shrink-0 text-xs tabular-nums text-zinc-400">87% match</span>
+              </div>
+              <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
+                <span class="min-w-0 truncate">Glycolysis · Krebs cycle · Electron transport</span>
+                <span>9 Jan 2026</span>
+              </div>
+              <p class="mt-1.5 text-sm leading-6 text-zinc-700">Respiration is the mirror of photosynthesis. Glucose is broken down in three stages: glycolysis in the cytoplasm, the Krebs cycle…</p>
+              <span class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-zinc-500">Open lecture <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span>
+            </a>
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="border-t border-stone-200 bg-white">
+      <p class="safe-area safe-area-bottom mx-auto w-full max-w-4xl py-4 text-center text-xs leading-5 text-zinc-400">LectureScribe — record, transcribe, and revise. Audio stays in your browser until you submit it for transcription. Saved lectures are private to this browser.</p>
+    </footer>
+  </div>
+</section>
+
+<!-- ============ SCREEN 2: LECTURE DETAIL ============ -->
+<section class="frame" data-name="lecture-detail" data-size="390x844" data-chrome="browser" data-scrolls>
+  <div class="min-h-dvh bg-stone-50 text-zinc-900">
+    <header class="sticky top-0 z-10 border-b border-stone-200 bg-white/90 backdrop-blur">
+      <div class="safe-area mx-auto flex w-full max-w-4xl items-center gap-3 py-3">
+        <a href="#" class="inline-flex min-h-9 items-center gap-1.5 rounded-full px-2 text-sm text-zinc-600 hover:bg-zinc-100">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          All lectures
+        </a>
+      </div>
+    </header>
+
+    <main class="safe-area mx-auto flex w-full max-w-4xl flex-col gap-6 py-6 pb-10 sm:py-8">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">Intro to Photosynthesis</h1>
+        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+          <span class="font-medium text-zinc-700">BIO 201</span>
+          <span>12 Jan 2026, 10:30</span>
+          <span class="inline-flex items-center gap-1"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 8 6 6 6-6"/><path d="m4 14 6 6 6-6"/></svg>EN</span>
+          <span class="inline-flex items-center gap-1"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>03:12</span>
+        </div>
+      </div>
+
+      <section class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+        <h2 class="font-semibold">No study notes yet</h2>
+        <p class="mt-1">This lecture was saved without structured notes. Generate them from the transcript below — it costs one request.</p>
+        <div class="mt-3">
+          <button type="button" class="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-700">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+            Generate notes
+          </button>
+        </div>
+      </section>
+
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <article class="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+          <h2 class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Raw transcript</h2>
+          <p class="max-h-[28rem] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-7 text-zinc-800 md:max-h-[36rem] sm:text-[15px]">So today we begin our look at photosynthesis. The equation is simple on paper: six molecules of carbon dioxide plus six of water, in the presence of light and chlorophyll, yield one molecule of glucose and six of oxygen. But the path inside the leaf is anything but simple. Light reactions happen in the thylakoid membranes, where chlorophyll absorbs photons and splits water, releasing oxygen as a by-product. The Calvin cycle then fixes carbon in the stroma, using ATP and NADPH from the light reactions to build sugar. Two things students often mix up: the light reactions need light, the Calvin cycle does not, strictly speaking, and oxygen comes from water, not from carbon dioxide.</p>
+        </article>
+
+        <div class="flex flex-col gap-6">
+          <article class="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+            <h2 class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Key sections</h2>
+            <ol class="space-y-2">
+              <li class="flex gap-2 text-sm"><span class="font-semibold tabular-nums text-zinc-400">1.</span><span class="text-zinc-800">Light reactions in the thylakoid</span></li>
+              <li class="flex gap-2 text-sm"><span class="font-semibold tabular-nums text-zinc-400">2.</span><span class="text-zinc-800">The Calvin cycle in the stroma</span></li>
+              <li class="flex gap-2 text-sm"><span class="font-semibold tabular-nums text-zinc-400">3.</span><span class="text-zinc-800">Common student misconceptions</span></li>
+            </ol>
+          </article>
+
+          <article class="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+            <h2 class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Definitions</h2>
+            <dl class="space-y-3">
+              <div class="rounded-lg bg-zinc-50 px-3 py-2">
+                <dt class="text-sm font-semibold text-zinc-900">Chlorophyll</dt>
+                <dd class="mt-0.5 text-sm leading-6 text-zinc-700">The green pigment in chloroplasts that absorbs light energy, mainly in the blue and red parts of the spectrum.</dd>
+              </div>
+              <div class="rounded-lg bg-zinc-50 px-3 py-2">
+                <dt class="text-sm font-semibold text-zinc-900">Thylakoid</dt>
+                <dd class="mt-0.5 text-sm leading-6 text-zinc-700">A flattened membrane sac inside the chloroplast where the light reactions take place.</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+            <h2 class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Flashcards</h2>
+            <div class="grid grid-cols-1 gap-3">
+              <button type="button" class="flashcard w-full cursor-pointer text-left" aria-pressed="false">
+                <span class="flashcard-inner">
+                  <span class="flashcard-front text-sm font-medium">Where do the light reactions happen?</span>
+                  <span class="flashcard-back text-sm">In the thylakoid membranes of the chloroplast.</span>
+                </span>
+              </button>
+              <button type="button" class="flashcard w-full cursor-pointer text-left" aria-pressed="false">
+                <span class="flashcard-inner">
+                  <span class="flashcard-front text-sm font-medium">What is the by-product of water splitting?</span>
+                  <span class="flashcard-back text-sm">Oxygen gas, released into the air.</span>
+                </span>
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-zinc-400">Tap a card to flip it.</p>
+          </article>
+        </div>
+      </div>
+    </main>
+  </div>
+</section>
+
+<!-- ============ SCREEN 3: OFFLINE ============ -->
+<section class="frame" data-name="offline" data-size="390x844" data-chrome="browser">
+  <div class="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 py-16 text-center">
+    <svg class="h-10 w-10 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 0 0 .42-8.98 6.5 6.5 0 0 0-12.7 1.7A4 4 0 0 0 6 19.5Z"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+    <h1 class="text-xl font-semibold text-zinc-900">You're offline</h1>
+    <p class="max-w-sm text-sm leading-6 text-zinc-600">LectureScribe needs a connection to record and transcribe lectures. Reconnect and reload — anything you have already saved is still in your library.</p>
+    <a href="#" class="inline-flex min-h-11 items-center justify-center rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white">Try again</a>
+  </div>
+</section>
+
+</body>
+</html>
